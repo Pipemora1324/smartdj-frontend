@@ -29,6 +29,25 @@ async function api(path, options = {}) {
   } catch {
     throw new Error('No pudimos conectar con el servidor. Revisa tu conexión e intenta de nuevo.');
   }
+  // Si el access token expiró o quedó desfasado, intercambia la cookie HttpOnly
+  // por un token nuevo y reintenta una vez antes de cerrar la sesión.
+  if (res.status === 401 && token && path.startsWith('/venues')) {
+    try {
+      const refreshRes = await fetch(`${API_BASE}/api/auth/refresh`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      const refreshed = await refreshRes.json();
+      if (refreshRes.ok && refreshed?.accessToken) {
+        setToken(refreshed.accessToken);
+        headers.Authorization = `Bearer ${refreshed.accessToken}`;
+        res = await fetch(url, { credentials: 'include', ...options, headers });
+      }
+    } catch {
+      // Se mostrará el error de la petición original si la renovación falla.
+    }
+  }
   const text = await res.text();
   let data = null;
   if (text) { try { data = JSON.parse(text); } catch { data = null; } }
