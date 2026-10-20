@@ -33,3 +33,11 @@
   // Quitamos barras finales para evitar dobles slash al concatenar.
   window.SMARTDJ_API_URL = String(apiUrl).replace(/\/+$/, '');
 })();
+
+/*
+ * Supabase Auth (registro, códigos de 6 dígitos, login y recuperación).
+ * Ambos valores son públicos por diseño: la URL del proyecto y la clave anon/publishable
+ * (Project Settings → API). Nunca pongas aquí la service_role ni una clave sb_secret_.
+ */
+window.SMARTDJ_SUPABASE_URL = window.SMARTDJ_SUPABASE_URL || '';
+window.SMARTDJ_SUPABASE_ANON_KEY = window.SMARTDJ_SUPABASE_ANON_KEY || '';
