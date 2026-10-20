@@ -55,6 +55,8 @@ async function api(path, options = {}) {
     const message = (data && (data.error || data.message)) || (res.status === 404 ? 'Recurso no encontrado.' : 'Ocurrió un error en el servidor. Intenta más tarde.');
     const err = new Error(message);
     err.status = res.status;
+    err.code = data?.code;
+    err.retryAfter = data?.retryAfter;
     throw err;
   }
   return data;
@@ -68,7 +70,88 @@ function validatePassword(value,forRegistration=false){const v=value||'';if(!v)r
 function validateName(value){const v=(value||'').trim();if(!v)return 'Este campo no puede estar vacío.';if(v.length<2)return 'Debe tener al menos 2 caracteres.';if(!NAME_RE.test(v))return 'Usa solo letras, números y espacios.';return null;}
 function setError(el,message){if(!el)return;el.textContent=message||'';el.style.display=message?'block':'none';}
 function showFormError(message){setError(document.querySelector('#formError'),message);}
-function authForm(mode='login'){const register=mode==='register';content.innerHTML=`<section class="auth"><h2>${register?'Crea tu venue':'Bienvenido de nuevo'}</h2><p>${register?'Empieza a dirigir tu ambiente musical.':'Ingresa a tu consola Smart DJ.'}</p><form id="authForm" novalidate>${register?'<input name="name" placeholder="Tu nombre" autocomplete="name"><p class="field-error" data-error-for="name"></p>':''}<input name="email" type="email" placeholder="Correo electrónico" autocomplete="email"><p class="field-error" data-error-for="email"></p><input name="password" type="password" placeholder="Contraseña (mínimo 8 caracteres)" autocomplete="${register?'new-password':'current-password'}"><p class="field-error" data-error-for="password"></p><p class="error" id="formError"></p><button type="submit">${register?'Crear cuenta':'Ingresar'}</button></form>${register?'':'<button type="button" class="switch" id="forgotLink">¿Olvidaste tu contraseña?</button>'}<button type="button" class="switch" id="switchAuth">${register?'Ya tengo cuenta':'Crear una cuenta'}</button></section>`;document.querySelector('#switchAuth').onclick=()=>authForm(register?'login':'register');if(!register)document.querySelector('#forgotLink').onclick=()=>forgotForm();document.querySelector('#authForm').onsubmit=async e=>{e.preventDefault();const data=Object.fromEntries(new FormData(e.target));showFormError('');let firstError=null;if(register){const nameErr=validateName(data.name);setError(document.querySelector('[data-error-for="name"]'),nameErr);if(nameErr)firstError=nameErr;}const emailErr=validateEmail(data.email);setError(document.querySelector('[data-error-for="email"]'),emailErr);if(emailErr&&!firstError)firstError=emailErr;const passErr=validatePassword(data.password,register);setError(document.querySelector('[data-error-for="password"]'),passErr);if(passErr&&!firstError)firstError=passErr;if(firstError)return showFormError(firstError);const payload={email:data.email.trim(),password:data.password};if(register)payload.name=data.name.trim();try{const result=await api(`/auth/${register?'register':'login'}`,{method:'POST',body:JSON.stringify(payload)});if(result?.accessToken)setToken(result.accessToken);await showDashboard(result.user);}catch(err){showFormError(err.message)}}}
+
+// ---------- Construcción segura del DOM ----------
+// Los textos siempre se asignan con textContent o como nodos de texto, nunca con innerHTML.
+function el(tag, props = {}, ...children) {
+  const node = document.createElement(tag);
+  for (const [key, value] of Object.entries(props)) {
+    if (key === 'text') node.textContent = value;
+    else if (key.startsWith('on')) node.addEventListener(key.slice(2), value);
+    else node.setAttribute(key, value);
+  }
+  node.append(...children.filter(Boolean));
+  return node;
+}
+function render(...nodes) { content.replaceChildren(...nodes); }
+
+// ---------- Códigos de 6 dígitos ----------
+function validateCode(value) { const v = (value || '').trim(); if (!v) return 'Escribe el código que te enviamos.'; if (!/^\d{6}$/.test(v)) return 'El código debe tener 6 dígitos.'; return null; }
+function codeInput() {
+  const input = el('input', { name: 'code', inputmode: 'numeric', autocomplete: 'one-time-code', maxlength: '6', placeholder: 'Código de 6 dígitos' });
+  input.addEventListener('input', () => { input.value = input.value.replace(/\D/g, '').slice(0, 6); });
+  return input;
+}
+// Botón "Reenviar código" con cuenta regresiva; respeta el retryAfter que devuelve el backend.
+function resendButton(send, showMessage, initialWait = 60) {
+  const btn = el('button', { type: 'button', class: 'switch' });
+  let timer = null;
+  const wait = (seconds) => {
+    clearInterval(timer);
+    let left = seconds;
+    const tick = () => {
+      if (left <= 0) { clearInterval(timer); btn.disabled = false; btn.textContent = 'Reenviar código'; return; }
+      btn.disabled = true; btn.textContent = `Reenviar código (${left}s)`; left--;
+    };
+    tick(); timer = setInterval(tick, 1000);
+  };
+  btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    try { const result = await send(); showMessage(result?.message || 'Te enviamos un código nuevo.', false); wait(60); }
+    catch (err) { showMessage(err.message, true); wait(err.retryAfter || 0); }
+  });
+  wait(initialWait);
+  return btn;
+}
+
+// ---------- Verificación del correo ----------
+function verifyStep(email, message, initialWait = 60) {
+  const info = el('p', { class: 'notice', text: message || 'Te enviamos un código de 6 dígitos a tu correo.' });
+  const input = codeInput();
+  const fieldError = el('p', { class: 'field-error' });
+  const formError = el('p', { class: 'error', id: 'formError' });
+  const form = el('form', { novalidate: '' }, input, fieldError, formError, el('button', { type: 'submit', text: 'Verificar' }));
+  const showMessage = (text, isError) => { if (isError) return setError(formError, text); setError(formError, ''); info.textContent = text; };
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const codeErr = validateCode(input.value); setError(fieldError, codeErr);
+    if (codeErr) return setError(formError, codeErr);
+    setError(formError, '');
+    try {
+      const result = await api('/auth/verify-email', { method: 'POST', body: JSON.stringify({ email, code: input.value.trim() }) });
+      if (result?.accessToken) setToken(result.accessToken);
+      await showDashboard(result.user);
+    } catch (err) { setError(formError, err.message); }
+  });
+  render(el('section', { class: 'auth' },
+    el('h2', { text: 'Verifica tu correo' }),
+    el('p', {}, 'Escribe el código que enviamos a ', el('b', { text: email }), '. Vence en 10 minutos.'),
+    info, form,
+    resendButton(() => api('/auth/resend-code', { method: 'POST', body: JSON.stringify({ email }) }), showMessage, initialWait),
+    el('button', { type: 'button', class: 'switch', text: 'Volver a ingresar', onclick: () => authForm('login') })));
+  input.focus();
+}
+// Login de una cuenta sin verificar: muestra el error y ofrece enviar un código nuevo.
+function offerVerification(email, message) {
+  showFormError(message);
+  const form = document.querySelector('#authForm');
+  if (!form || form.querySelector('[data-verify]')) return;
+  form.append(el('button', { type: 'button', class: 'switch', 'data-verify': '', text: 'Enviar código de verificación', onclick: async () => {
+    try { const result = await api('/auth/resend-code', { method: 'POST', body: JSON.stringify({ email }) }); verifyStep(email, result?.message); }
+    catch (err) { if (err.status === 429) verifyStep(email, 'Ya te enviamos un código hace poco. Revisa tu correo.', err.retryAfter); else showFormError(err.message); }
+  } }));
+}
+function authForm(mode='login'){const register=mode==='register';content.innerHTML=`<section class="auth"><h2>${register?'Crea tu venue':'Bienvenido de nuevo'}</h2><p>${register?'Empieza a dirigir tu ambiente musical.':'Ingresa a tu consola Smart DJ.'}</p><form id="authForm" novalidate>${register?'<input name="name" placeholder="Tu nombre" autocomplete="name"><p class="field-error" data-error-for="name"></p>':''}<input name="email" type="email" placeholder="Correo electrónico" autocomplete="email"><p class="field-error" data-error-for="email"></p><input name="password" type="password" placeholder="Contraseña (mínimo 8 caracteres)" autocomplete="${register?'new-password':'current-password'}"><p class="field-error" data-error-for="password"></p><p class="error" id="formError"></p><button type="submit">${register?'Crear cuenta':'Ingresar'}</button></form>${register?'':'<button type="button" class="switch" id="forgotLink">¿Olvidaste tu contraseña?</button>'}<button type="button" class="switch" id="switchAuth">${register?'Ya tengo cuenta':'Crear una cuenta'}</button></section>`;document.querySelector('#switchAuth').onclick=()=>authForm(register?'login':'register');if(!register)document.querySelector('#forgotLink').onclick=()=>forgotForm();document.querySelector('#authForm').onsubmit=async e=>{e.preventDefault();const data=Object.fromEntries(new FormData(e.target));showFormError('');let firstError=null;if(register){const nameErr=validateName(data.name);setError(document.querySelector('[data-error-for="name"]'),nameErr);if(nameErr)firstError=nameErr;}const emailErr=validateEmail(data.email);setError(document.querySelector('[data-error-for="email"]'),emailErr);if(emailErr&&!firstError)firstError=emailErr;const passErr=validatePassword(data.password,register);setError(document.querySelector('[data-error-for="password"]'),passErr);if(passErr&&!firstError)firstError=passErr;if(firstError)return showFormError(firstError);const payload={email:data.email.trim(),password:data.password};if(register)payload.name=data.name.trim();try{const result=await api(`/auth/${register?'register':'login'}`,{method:'POST',body:JSON.stringify(payload)});if(register)return verifyStep(payload.email.toLowerCase(),result?.message);if(result?.accessToken)setToken(result.accessToken);await showDashboard(result.user);}catch(err){if(err.code==='EMAIL_NOT_VERIFIED')return offerVerification(payload.email.toLowerCase(),err.message);showFormError(err.message)}}}
 
 // ---------- Olvidé mi contraseña ----------
 function forgotForm(){content.innerHTML=`<section class="auth"><h2>Recuperar contraseña</h2><p>Te enviaremos un enlace para crear una nueva.</p><form id="forgotForm" novalidate><input name="email" type="email" placeholder="Correo electrónico" autocomplete="email"><p class="field-error" data-error-for="email"></p><p class="error" id="formError"></p><button type="submit">Enviar enlace</button></form><button type="button" class="switch" id="backToLogin">Volver a ingresar</button></section>`;document.querySelector('#backToLogin').onclick=()=>authForm('login');document.querySelector('#forgotForm').onsubmit=async e=>{e.preventDefault();const data=Object.fromEntries(new FormData(e.target));showFormError('');const emailErr=validateEmail(data.email);setError(document.querySelector('[data-error-for="email"]'),emailErr);if(emailErr)return showFormError(emailErr);try{const result=await api('/auth/forgot-password',{method:'POST',body:JSON.stringify({email:data.email.trim()})});content.innerHTML=`<section class="auth"><h2>Revisa tu correo</h2><p>${result?.message||'Si el correo existe, te enviamos un enlace para restablecer tu contraseña.'}</p>${result?.resetToken?`<p><small>Token de prueba: <b>${result.resetToken}</b></small></p>`:''}<button type="button" class="switch" id="goReset">Ya tengo el token</button><button type="button" class="switch" id="backToLogin2">Volver a ingresar</button></section>`;document.querySelector('#goReset').onclick=()=>resetForm();document.querySelector('#backToLogin2').onclick=()=>authForm('login');}catch(err){showFormError(err.message)}}}
