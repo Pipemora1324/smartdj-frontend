@@ -34,6 +34,25 @@ Mientras estén vacías, la app muestra "El inicio de sesión no está configura
 
 La configuración del panel de Supabase (SMTP de Gmail, plantillas con el código, límites) está en `SUPABASE_AUTH.md` del repositorio `smartdj-backend`.
 
+## Estado en vivo de una petición (gRPC en el backend)
+
+El navegador **no habla gRPC**: usa REST con el backend. Por dentro, el backend evalúa cada petición llamando al motor de IA por **gRPC con streaming** y reenvía cada etapa al navegador por **SSE**.
+
+```
+ Navegador (este repo)                  Backend                      Motor de IA
+ ─────────────────────                  ───────                      ───────────
+ POST /api/public/venues/:code/requests ─▶ cola BullMQ ── gRPC stream ─▶ etapas
+ EventSource /api/public/requests/:id/events ◀── SSE ◀── Redis ◀──────── (en cola,
+ (si falla: GET /api/public/requests/:id cada 2 s)                       género, tempo,
+                                                                          tonalidad,
+                                                                          resultado)
+```
+
+- Después de enviar una canción, `requestStatusView()` en `app.js` muestra las etapas (en cola, analizando el género, el tempo y la tonalidad, resultado) y al final la decisión. Si no se acepta directamente, también muestra el puente sugerido.
+- Usa `EventSource`. Si el SSE se corta o el navegador no lo soporta, consulta el estado cada 2 segundos (polling).
+- Los textos que llegan del servidor se insertan con `textContent`.
+- Los detalles de gRPC están en el README y en `DECISIONES_GRPC.md` del repositorio `smartdj-backend`.
+
 ## Docker
 
 ```bash
