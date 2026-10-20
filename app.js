@@ -217,7 +217,7 @@ function forgotForm() {
     if (emailErr) return setError(formError, emailErr);
     setError(formError, '');
     const value = email.value.trim().toLowerCase();
-    try { const result = await api('/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email: value }) }); resetForm(value, result?.message); }
+    try { await supabaseAuth((auth) => auth.resetPasswordForEmail(value)); resetForm(value);}
     catch (err) { setError(formError, err.message); }
   });
   render(el('section', { class: 'auth' },
@@ -238,9 +238,11 @@ function resetForm(email, message) {
   const formError = el('p', { class: 'error', id: 'formError' });
   const form = el('form', { novalidate: '' }, code, errors.code, password, errors.password, confirm, errors.confirm, formError, el('button', { type: 'submit', text: 'Guardar contraseña' }));
   const showMessage = (text, isError) => { if (isError) return setError(formError, text); setError(formError, ''); info.textContent = text; };
+  // verifyOtp consume el código: si luego falla updateUser (p. ej. contraseña repetida), se reintenta sin pedir otro.
+  let codeVerified = false;
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const codeErr = validateCode(code.value);
+    const codeErr = codeVerified ? null : validateCode(code.value);
     const passErr = validatePassword(password.value, true);
     const confirmErr = !passErr && password.value !== confirm.value ? 'Las contraseñas no coinciden.' : null;
     setError(errors.code, codeErr); setError(errors.password, passErr); setError(errors.confirm, confirmErr);
@@ -248,7 +250,15 @@ function resetForm(email, message) {
     if (firstError) return setError(formError, firstError);
     setError(formError, '');
     try {
-      await api('/auth/reset-password', { method: 'POST', body: JSON.stringify({ email, code: code.value.trim(), password: password.value }) });
+      if (!codeVerified) {
+        await supabaseAuth((auth) => auth.verifyOtp({ email, token: code.value.trim(), type: 'recovery' }));
+        codeVerified = true;
+        code.disabled = true;
+      }
+      await supabaseAuth((auth) => auth.updateUser({ password: password.value }));
+      // Cierra todas las sesiones de la cuenta, incluida la que abrió el código.
+      await supabaseClient.auth.signOut({ scope: 'global' }).catch(() => {});
+      clearToken();
       render(el('section', { class: 'auth' },
         el('h2', { text: '¡Listo!' }),
         el('p', { text: 'Tu contraseña se actualizó y cerramos las sesiones abiertas. Ya puedes ingresar.' }),
@@ -259,7 +269,7 @@ function resetForm(email, message) {
     el('h2', { text: 'Nueva contraseña' }),
     el('p', {}, 'Escribe el código que enviamos a ', el('b', { text: email }), ' y elige una contraseña segura.'),
     info, form,
-    resendButton(() => api('/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email }) }), showMessage),
+    resendButton(() => supabaseAuth((auth) => auth.resetPasswordForEmail(email)), showMessage),
     el('button', { type: 'button', class: 'switch', text: 'Volver a ingresar', onclick: () => authForm('login') })));
   code.focus();
 }
