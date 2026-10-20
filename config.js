@@ -39,5 +39,5 @@
  * Ambos valores son públicos por diseño: la URL del proyecto y la clave anon/publishable
  * (Project Settings → API). Nunca pongas aquí la service_role ni una clave sb_secret_.
  */
-window.SMARTDJ_SUPABASE_URL = window.SMARTDJ_SUPABASE_URL || '';
-window.SMARTDJ_SUPABASE_ANON_KEY = window.SMARTDJ_SUPABASE_ANON_KEY || '';
+window.SMARTDJ_SUPABASE_URL = window.SMARTDJ_SUPABASE_URL || 'https://tecabokuyamxmozomqay.supabase.co';
+window.SMARTDJ_SUPABASE_ANON_KEY = window.SMARTDJ_SUPABASE_ANON_KEY || 'sb_publishable_h_C1CNiFkIhCCtFa9XKOvg_rb3kM7Q9';
