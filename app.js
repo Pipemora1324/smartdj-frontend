@@ -277,5 +277,65 @@ async function showDashboard(user){let venues=[];try{venues=await api('/venues')
 document.querySelector('#openLogin').onclick=()=>{authForm();dialog.showModal()};document.querySelector('#openRegister').onclick=document.querySelector('#heroStart').onclick=()=>{authForm('register');dialog.showModal()};document.querySelector('#closeDialog').onclick=()=>dialog.close();
 document.querySelector('#mixButton').onclick=()=>{const st=document.querySelector('#mixStatus');st.textContent='Puente armónico generado · mezclando…';document.querySelectorAll('.platter').forEach(p=>p.style.animationDuration='2s');setTimeout(()=>{st.textContent='Transición completada · 94% match';document.querySelectorAll('.platter').forEach(p=>p.style.animationDuration='8s')},1800)};
 document.querySelector('#crossfade').oninput=e=>document.querySelector('.deck').style.filter=`brightness(${.8+e.target.value/500})`;
-async function publicRequest(code){try{const venue=await api(`/public/venues/${encodeURIComponent(code)}`);content.innerHTML=`<section class="auth"><h2>Pide una canción</h2><p>Estás en <b>${venue.name}</b> · ${venue.ambience}</p><form id="requestForm"><input name="guestName" placeholder="Tu nombre" required><input name="title" placeholder="Canción" required><input name="artist" placeholder="Artista" required><input name="genre" placeholder="Género (ej. Salsa)" required><input name="bpm" type="number" min="1" max="300" placeholder="BPM (opcional)"><input name="musicalKey" placeholder="Tonalidad (opcional, ej. Am)"><p class="error" id="requestError"></p><button>Enviar petición</button></form></section>`;dialog.showModal();document.querySelector('#requestForm').onsubmit=async e=>{e.preventDefault();const d=Object.fromEntries(new FormData(e.target));if(!d.bpm)delete d.bpm;else d.bpm=Number(d.bpm);if(!d.musicalKey)delete d.musicalKey;try{await api(`/public/venues/${encodeURIComponent(code)}/requests`,{method:'POST',body:JSON.stringify(d)});content.innerHTML='<section class="auth"><h2>Petición recibida</h2><p>Smart DJ la evaluará para mantener el ambiente perfecto.</p><button id="done">Cerrar</button></section>';document.querySelector('#done').onclick=()=>dialog.close()}catch(err){document.querySelector('#requestError').textContent=err.message}}}catch{alert('No encontramos este establecimiento. Revisa el código compartido.')}}
+// ---------- Estado en vivo de una petición ----------
+// El backend recibe las etapas del motor por streaming gRPC y las reenvía por SSE (EventSource).
+// Si SSE no está disponible o se corta, se consulta el estado cada 2 segundos (polling).
+const REQUEST_STAGES = [
+  ['queued', 'En cola'],
+  ['analyzing_genre', 'Analizando el género'],
+  ['analyzing_bpm', 'Analizando el tempo'],
+  ['analyzing_key', 'Analizando la tonalidad'],
+  ['result', 'Resultado'],
+];
+function requestStatusView(requestId) {
+  const items = new Map(REQUEST_STAGES.map(([stage, label]) => [stage, el('li', { class: 'stage-pending', text: label })]));
+  const message = el('p', { class: 'notice', text: 'Tu petición está en la cola.' });
+  const outcome = el('div');
+  let source = null;
+  let pollTimer = null;
+  let finished = false;
+  const stop = () => { finished = true; source?.close(); clearTimeout(pollTimer); };
+  const showOutcome = (event) => {
+    const children = [];
+    if (event.stage === 'failed') {
+      children.push(el('h3', { text: 'No pudimos evaluarla' }), el('p', { text: event.message }));
+    } else if (event.result?.accepted) {
+      children.push(el('h3', { text: '¡Aceptada!' }), el('p', { text: event.result.reason }));
+    } else {
+      children.push(el('h3', { text: 'El DJ preparará una transición' }), el('p', { text: event.result?.reason || event.message }));
+      const steps = event.result?.bridgeSequence || [];
+      if (steps.length) children.push(el('ol', {}, ...steps.map((step) => el('li', { text: `${step.genre} a ${step.target_bpm} BPM` }))));
+    }
+    outcome.replaceChildren(...children);
+  };
+  const apply = (event) => {
+    if (finished || !event?.stage) return;
+    message.textContent = event.message || '';
+    const reached = REQUEST_STAGES.findIndex(([stage]) => stage === event.stage);
+    REQUEST_STAGES.forEach(([stage], index) => {
+      items.get(stage).className = reached < 0 ? 'stage-pending' : index < reached ? 'stage-done' : index === reached ? 'stage-current' : 'stage-pending';
+    });
+    if (event.stage === 'result' || event.stage === 'failed') { showOutcome(event); stop(); }
+  };
+  const poll = async () => {
+    if (finished) return;
+    try { const data = await api(`/public/requests/${encodeURIComponent(requestId)}`); apply(data.live); } catch { /* se reintenta en el siguiente ciclo */ }
+    if (!finished) pollTimer = setTimeout(poll, 2000);
+  };
+  if ('EventSource' in window) {
+    source = new EventSource(`${API_BASE}/api/public/requests/${encodeURIComponent(requestId)}/events`);
+    source.addEventListener('status', (e) => { try { apply(JSON.parse(e.data)); } catch { /* evento ilegible: se ignora */ } });
+    source.onerror = () => { if (finished) return; source.close(); source = null; poll(); };
+  } else {
+    poll();
+  }
+  dialog.addEventListener('close', stop, { once: true });
+  render(el('section', { class: 'auth' },
+    el('h2', { text: 'Petición recibida' }),
+    message,
+    el('ul', { class: 'stages' }, ...items.values()),
+    outcome,
+    el('button', { type: 'button', text: 'Cerrar', onclick: () => dialog.close() })));
+}
+async function publicRequest(code){try{const venue=await api(`/public/venues/${encodeURIComponent(code)}`);content.innerHTML=`<section class="auth"><h2>Pide una canción</h2><p>Estás en <b>${venue.name}</b> · ${venue.ambience}</p><form id="requestForm"><input name="guestName" placeholder="Tu nombre" required><input name="title" placeholder="Canción" required><input name="artist" placeholder="Artista" required><input name="genre" placeholder="Género (ej. Salsa)" required><input name="bpm" type="number" min="1" max="300" placeholder="BPM (opcional)"><input name="musicalKey" placeholder="Tonalidad (opcional, ej. Am)"><p class="error" id="requestError"></p><button>Enviar petición</button></form></section>`;dialog.showModal();document.querySelector('#requestForm').onsubmit=async e=>{e.preventDefault();const d=Object.fromEntries(new FormData(e.target));if(!d.bpm)delete d.bpm;else d.bpm=Number(d.bpm);if(!d.musicalKey)delete d.musicalKey;try{const created=await api(`/public/venues/${encodeURIComponent(code)}/requests`,{method:'POST',body:JSON.stringify(d)});requestStatusView(created.id)}catch(err){document.querySelector('#requestError').textContent=err.message}}}catch{alert('No encontramos este establecimiento. Revisa el código compartido.')}}
 const publicCode=new URLSearchParams(location.search).get('venue');if(publicCode) publicRequest(publicCode);
