@@ -62,6 +62,64 @@ async function api(path, options = {}) {
   return data;
 }
 
+// ---------- Supabase Auth ----------
+// Cliente único de Supabase Auth; queda en null si config.js no tiene la URL o la clave anon.
+const supabaseClient = window.supabase && window.SMARTDJ_SUPABASE_URL && window.SMARTDJ_SUPABASE_ANON_KEY
+  ? window.supabase.createClient(window.SMARTDJ_SUPABASE_URL, window.SMARTDJ_SUPABASE_ANON_KEY, {
+    auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false, storageKey: 'smartdj-supabase' },
+  })
+  : null;
+
+// Mensajes en español para los códigos de error de Supabase Auth.
+const authErrorMessages = {
+  invalid_credentials: 'El correo o la contraseña son incorrectos.',
+  email_not_confirmed: 'Todavía no has confirmado tu correo. Escribe el código que te enviamos o pide otro.',
+  user_already_exists: 'Este correo ya está registrado. Ingresa o recupera tu contraseña.',
+  email_exists: 'Este correo ya está registrado. Ingresa o recupera tu contraseña.',
+  weak_password: 'La contraseña es muy débil. Usa al menos 8 caracteres, con letras y números.',
+  same_password: 'La contraseña nueva debe ser distinta de la anterior.',
+  otp_expired: 'El código no es válido o ya venció. Pide otro.',
+  otp_disabled: 'La verificación con código no está activada. Intenta más tarde.',
+  over_email_send_rate_limit: 'Ya te enviamos un código hace poco. Espera un minuto antes de pedir otro.',
+  over_request_rate_limit: 'Hiciste demasiados intentos. Espera unos minutos e intenta de nuevo.',
+  email_address_invalid: 'El correo electrónico no es válido.',
+  signup_disabled: 'El registro está desactivado por ahora.',
+  validation_failed: 'Revisa los datos e intenta de nuevo.',
+  session_not_found: 'Tu sesión expiró. Vuelve a iniciar sesión.',
+};
+// Convierte un error de Supabase (o una falla de red) en un Error con mensaje en español y su código.
+function authError(error) {
+  const { code, status, name } = error || {};
+  let message = authErrorMessages[code];
+  if (!message && status === 429) message = authErrorMessages.over_request_rate_limit;
+  if (!message && (name === 'AuthRetryableFetchError' || status === 0)) message = 'No pudimos conectar. Revisa tu conexión e intenta de nuevo.';
+  const err = new Error(message || 'No se pudo completar la operación. Intenta de nuevo.');
+  err.code = code;
+  if (code === 'over_email_send_rate_limit') err.retryAfter = 60;
+  return err;
+}
+// Ejecuta una llamada de Supabase Auth y devuelve data; lanza un Error en español si falla.
+async function supabaseAuth(call) {
+  if (!supabaseClient) throw new Error('El inicio de sesión no está configurado todavía. Intenta más tarde.');
+  let result;
+  try { result = await call(supabaseClient.auth); } catch (err) { throw authError(err); }
+  if (result?.error) throw authError(result.error);
+  return result?.data;
+}
+// Con una sesión de Supabase: guarda el token, pide el perfil a la API y abre el panel.
+async function openSession(session) {
+  setToken(session.access_token);
+  let user;
+  try { user = await api('/auth/me'); }
+  catch (err) { await supabaseClient.auth.signOut({ scope: 'local' }).catch(() => {}); clearToken(); throw err; }
+  await showDashboard(user);
+}
+// supabase-js renueva el token antes de que venza: mantenemos al día la copia que envía api().
+if (supabaseClient) supabaseClient.auth.onAuthStateChange((event, session) => {
+  if (session?.access_token && ['SIGNED_IN', 'TOKEN_REFRESHED', 'USER_UPDATED'].includes(event)) setToken(session.access_token);
+  if (event === 'SIGNED_OUT') clearToken();
+});
+
 // ---------- Validaciones estrictas ----------
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const NAME_RE = /^[\p{L}\p{N}][\p{L}\p{N}\s'.-]{1,79}$/u;
@@ -128,16 +186,15 @@ function verifyStep(email, message, initialWait = 60) {
     if (codeErr) return setError(formError, codeErr);
     setError(formError, '');
     try {
-      const result = await api('/auth/verify-email', { method: 'POST', body: JSON.stringify({ email, code: input.value.trim() }) });
-      if (result?.accessToken) setToken(result.accessToken);
-      await showDashboard(result.user);
+      const verified = await supabaseAuth((auth) => auth.verifyOtp({ email, token: input.value.trim(), type: 'email' }));
+      await openSession(verified.session);
     } catch (err) { setError(formError, err.message); }
   });
   render(el('section', { class: 'auth' },
     el('h2', { text: 'Verifica tu correo' }),
     el('p', {}, 'Escribe el código que enviamos a ', el('b', { text: email }), '. Vence en 10 minutos.'),
     info, form,
-    resendButton(() => api('/auth/resend-code', { method: 'POST', body: JSON.stringify({ email }) }), showMessage, initialWait),
+    resendButton(() => supabaseAuth((auth) => auth.resend({ type: 'signup', email })), showMessage, initialWait),
     el('button', { type: 'button', class: 'switch', text: 'Volver a ingresar', onclick: () => authForm('login') })));
   input.focus();
 }
@@ -151,7 +208,7 @@ function offerVerification(email, message) {
     catch (err) { if (err.status === 429) verifyStep(email, 'Ya te enviamos un código hace poco. Revisa tu correo.', err.retryAfter); else showFormError(err.message); }
   } }));
 }
-function authForm(mode='login'){const register=mode==='register';content.innerHTML=`<section class="auth"><h2>${register?'Crea tu venue':'Bienvenido de nuevo'}</h2><p>${register?'Empieza a dirigir tu ambiente musical.':'Ingresa a tu consola Smart DJ.'}</p><form id="authForm" novalidate>${register?'<input name="name" placeholder="Tu nombre" autocomplete="name"><p class="field-error" data-error-for="name"></p>':''}<input name="email" type="email" placeholder="Correo electrónico" autocomplete="email"><p class="field-error" data-error-for="email"></p><input name="password" type="password" placeholder="Contraseña (mínimo 8 caracteres)" autocomplete="${register?'new-password':'current-password'}"><p class="field-error" data-error-for="password"></p><p class="error" id="formError"></p><button type="submit">${register?'Crear cuenta':'Ingresar'}</button></form>${register?'':'<button type="button" class="switch" id="forgotLink">¿Olvidaste tu contraseña?</button>'}<button type="button" class="switch" id="switchAuth">${register?'Ya tengo cuenta':'Crear una cuenta'}</button></section>`;document.querySelector('#switchAuth').onclick=()=>authForm(register?'login':'register');if(!register)document.querySelector('#forgotLink').onclick=()=>forgotForm();document.querySelector('#authForm').onsubmit=async e=>{e.preventDefault();const data=Object.fromEntries(new FormData(e.target));showFormError('');let firstError=null;if(register){const nameErr=validateName(data.name);setError(document.querySelector('[data-error-for="name"]'),nameErr);if(nameErr)firstError=nameErr;}const emailErr=validateEmail(data.email);setError(document.querySelector('[data-error-for="email"]'),emailErr);if(emailErr&&!firstError)firstError=emailErr;const passErr=validatePassword(data.password,register);setError(document.querySelector('[data-error-for="password"]'),passErr);if(passErr&&!firstError)firstError=passErr;if(firstError)return showFormError(firstError);const payload={email:data.email.trim(),password:data.password};if(register)payload.name=data.name.trim();try{const result=await api(`/auth/${register?'register':'login'}`,{method:'POST',body:JSON.stringify(payload)});if(register)return verifyStep(payload.email.toLowerCase(),result?.message);if(result?.accessToken)setToken(result.accessToken);await showDashboard(result.user);}catch(err){if(err.code==='EMAIL_NOT_VERIFIED')return offerVerification(payload.email.toLowerCase(),err.message);showFormError(err.message)}}}
+function authForm(mode='login'){const register=mode==='register';content.innerHTML=`<section class="auth"><h2>${register?'Crea tu venue':'Bienvenido de nuevo'}</h2><p>${register?'Empieza a dirigir tu ambiente musical.':'Ingresa a tu consola Smart DJ.'}</p><form id="authForm" novalidate>${register?'<input name="name" placeholder="Tu nombre" autocomplete="name"><p class="field-error" data-error-for="name"></p>':''}<input name="email" type="email" placeholder="Correo electrónico" autocomplete="email"><p class="field-error" data-error-for="email"></p><input name="password" type="password" placeholder="Contraseña (mínimo 8 caracteres)" autocomplete="${register?'new-password':'current-password'}"><p class="field-error" data-error-for="password"></p><p class="error" id="formError"></p><button type="submit">${register?'Crear cuenta':'Ingresar'}</button></form>${register?'':'<button type="button" class="switch" id="forgotLink">¿Olvidaste tu contraseña?</button>'}<button type="button" class="switch" id="switchAuth">${register?'Ya tengo cuenta':'Crear una cuenta'}</button></section>`;document.querySelector('#switchAuth').onclick=()=>authForm(register?'login':'register');if(!register)document.querySelector('#forgotLink').onclick=()=>forgotForm();document.querySelector('#authForm').onsubmit=async e=>{e.preventDefault();const data=Object.fromEntries(new FormData(e.target));showFormError('');let firstError=null;if(register){const nameErr=validateName(data.name);setError(document.querySelector('[data-error-for="name"]'),nameErr);if(nameErr)firstError=nameErr;}const emailErr=validateEmail(data.email);setError(document.querySelector('[data-error-for="email"]'),emailErr);if(emailErr&&!firstError)firstError=emailErr;const passErr=validatePassword(data.password,register);setError(document.querySelector('[data-error-for="password"]'),passErr);if(passErr&&!firstError)firstError=passErr;if(firstError)return showFormError(firstError);const payload={email:data.email.trim(),password:data.password};if(register)payload.name=data.name.trim();try{if(register){const email=payload.email.toLowerCase();const signed=await supabaseAuth(auth=>auth.signUp({email,password:payload.password,options:{data:{name:payload.name}}}));if(signed?.user&&Array.isArray(signed.user.identities)&&!signed.user.identities.length)return showFormError(authErrorMessages.email_exists);if(signed?.session)return openSession(signed.session);return verifyStep(email);}const result=await api('/auth/login',{method:'POST',body:JSON.stringify(payload)});if(result?.accessToken)setToken(result.accessToken);await showDashboard(result.user);}catch(err){if(err.code==='EMAIL_NOT_VERIFIED')return offerVerification(payload.email.toLowerCase(),err.message);showFormError(err.message)}}}
 
 // ---------- Olvidé mi contraseña ----------
 function forgotForm() {
