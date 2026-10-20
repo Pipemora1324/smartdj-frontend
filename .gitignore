@@ -1,0 +1,39 @@
+# Secretos
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+secrets/
+credentials*.json
+
+# Dependencias
+node_modules/
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Builds y logs
+dist/
+build/
+coverage/
+*.log
+
+# Datos locales
+pgdata/
+*.sql.bak
+*.dump
+
+# Editor y sistema
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Claude Code
+.claude/settings.json
+.claude/settings.local.json
