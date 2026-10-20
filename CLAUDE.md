@@ -2,7 +2,8 @@
 
 Frontend estático de SmartDJ (HTML, CSS y JavaScript nativo, sin build). Lo usan los dueños de locales (panel) y los clientes que llegan por el link público o el QR de un local (sin login).
 
-- `config.js` resuelve la URL del backend: `http://localhost:3000` en local y Render en producción.
+- `config.js` resuelve la URL del backend: `http://localhost:3000` en local y Render en producción. También guarda la URL de Supabase y la clave anon (públicas).
+- **Autenticación: Supabase Auth** (`supabase-js` por CDN con SRI). Registro, códigos de 6 dígitos, login y recuperación van por `supabaseAuth()` en `app.js`; el token se envía al backend como `Bearer`. Las rutas `/api/auth/*` propias de la Fase 1 responden 410: no usarlas. Las pruebas locales usan un Supabase simulado, nunca el proyecto real.
 - `app.js`: toda la lógica de la interfaz. Los textos del usuario o del servidor se insertan con `textContent`, nunca con `innerHTML`.
 - `scripts/`: servidor estático local y scripts de QA.
 - Despliegue en Vercel. El API vive en el repo `smartdj-backend` (Render + Supabase).
