@@ -17,5 +17,5 @@ Frontend estático de SmartDJ (HTML, CSS y JavaScript nativo, sin build). Lo usa
 - **Secretos:** no leer ni tocar `.env`. En `.env.example` solo placeholders `CAMBIAR_ESTO`.
 - **Git remoto:** no hacer push sin confirmación del usuario. Nunca usar `--force` ni reescribir el historial.
 - **Trabajo por fases:** una fase a la vez. Al terminar cada una, detenerse y decir qué hay que configurar en Render, Vercel o Supabase.
-- **Comunicación backend ↔ ai:** en una fase próxima pasará a gRPC (con streaming). Todavía no existe el `.proto`; no asumir su forma.
+- **Comunicación backend ↔ ai: gRPC** (vive en `smartdj-backend`). El frontend no usa gRPC: sigue con REST y recibe el estado en vivo de cada petición por SSE (`/api/public/requests/:id/events`), con polling como respaldo (`requestStatusView()` en `app.js`).
 - **Pruebas locales:** nunca probar contra el backend de producción; usar un backend local en `localhost:3000`.
