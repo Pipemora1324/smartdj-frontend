@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 
-const context = { window: {}, Math, Number, Array, Float32Array, String, Date };
+const context = { window: { crypto: { getRandomValues: (a) => globalThis.crypto.getRandomValues(a) } }, Math, Number, Array, Float32Array, Uint8Array, String, Date };
 vm.runInNewContext(readFileSync(new URL('../console-core.js', import.meta.url), 'utf8'), context);
 const core = context.window.SmartDJConsole;
 const close = (a, b) => Math.abs(a - b) < 1e-9;

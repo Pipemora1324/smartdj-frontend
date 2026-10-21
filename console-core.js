@@ -87,9 +87,12 @@
     return Math.min(1, Math.max(0, Number.isFinite(v) ? v : 0));
   }
 
+  // Id de la consola: aleatorio criptográfico (randomUUID o, en contextos sin él, getRandomValues).
   function newConsoleId() {
-    if (global.crypto && typeof global.crypto.randomUUID === 'function') return global.crypto.randomUUID();
-    return `consola-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+    const { crypto } = global;
+    if (crypto && typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+    const bytes = crypto.getRandomValues(new Uint8Array(16));
+    return `consola-${Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')}`;
   }
 
   const SOURCE_LABELS = { autodj: 'AutoDJ', request: 'Petición', manual: 'Manual' };
