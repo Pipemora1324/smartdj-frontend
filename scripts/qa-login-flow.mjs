@@ -43,12 +43,14 @@ export default async function run(page, ui) {
   await ui.click(loginBtn);
   await page.waitForTimeout(200);
 
-  await page.evaluate(() => {
+  // Contraseña aleatoria de prueba: el backend está simulado, así que cualquier valor sirve.
+  const password = `qa-${crypto.randomUUID()}`;
+  await page.evaluate((pw) => {
     const form = document.querySelector('#authForm');
     form.querySelector('[name="email"]').value = 'demo@gmail.com';
-    form.querySelector('[name="password"]').value = 'Clave1234';
+    form.querySelector('[name="password"]').value = pw;
     form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
-  });
+  }, password);
   await page.waitForTimeout(600);
 
   return {
