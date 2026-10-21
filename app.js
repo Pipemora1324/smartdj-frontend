@@ -671,7 +671,8 @@ function venuePage(venue, code) {
     try {
       const data = await api(`/public/venues/${encodeURIComponent(code)}/now`);
       nowArea.replaceChildren(nowPlayingCard(data.nowPlaying));
-      queueHint.textContent = data.queue.length ? '' : data.station ? 'La emisora está eligiendo las próximas canciones.' : 'No hay canciones en cola. Las aceptadas por el DJ aparecen aquí.';
+      const emptyQueue = data.station ? 'La emisora está eligiendo las próximas canciones.' : 'No hay canciones en cola. Las aceptadas por el DJ aparecen aquí.';
+      queueHint.textContent = data.queue.length ? '' : emptyQueue;
       queueList.replaceChildren(...data.queue.map((song) => el('li', {}, trackCover({ ...song, trackId: song.id }, 40),
         el('span', { class: 'track-info' }, el('strong', { text: song.title }), el('small', { text: song.artist })),
         song.source === 'request' ? el('span', { class: 'requested', text: 'Pedida' }) : null)));

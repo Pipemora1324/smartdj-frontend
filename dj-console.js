@@ -10,6 +10,14 @@ const CATALOG_DEBOUNCE_MS = 500;
 const SKIP_FADE_SECONDS = 3;
 const WAVE_BARS = 120;
 let activeConsole = null;
+const STATUS_LABELS = { playing: 'Al aire', paused: 'En pausa', stopped: 'Apagada' };
+
+const artistLine = (track) => (track.genre ? `${track.artist} · ${track.genre}` : track.artist);
+function deckBadge(item, isActive, playing) {
+  if (!item) return 'VACÍO';
+  if (!isActive) return 'SIGUIENTE';
+  return playing ? 'AL AIRE' : 'EN PAUSA';
+}
 
 // Solo enlaces https en el crédito (evita javascript: u otros esquemas en href).
 function safeLink(value) {
@@ -142,9 +150,9 @@ function showConsole(venue, { onBack } = {}) {
       catalogPanel())));
 
   // ---------- Servidor ----------
-  const call = async (method, path = '', body) => {
+  const call = async (method, path, body) => {
     try {
-      const snap = await api(`${P}${path}`, { method, ...(body ? { body: JSON.stringify(body) } : {}) });
+      const snap = await api(`${P}${path ?? ''}`, { method, ...(body ? { body: JSON.stringify(body) } : {}) });
       if (!c.closed) applySnapshot(snap);
       return snap;
     } catch (err) {
@@ -349,13 +357,16 @@ function showConsole(venue, { onBack } = {}) {
     const { view, item } = deck;
     const isActive = c.decks && deck === activeDeck();
     view.root.classList.toggle('live', Boolean(isActive && item));
-    view.badge.textContent = !item ? 'VACÍO' : isActive ? (c.playing ? 'AL AIRE' : 'EN PAUSA') : 'SIGUIENTE';
+    view.badge.textContent = deckBadge(item, isActive, c.playing);
     view.title.textContent = item?.track?.title ?? 'Sin pista';
-    view.artist.textContent = item?.track ? `${item.track.artist}${item.track.genre ? ` · ${item.track.genre}` : ''}` : '';
-    view.credit.replaceWith(view.credit = creditLine(item?.track));
+    view.artist.textContent = item?.track ? artistLine(item.track) : '';
+    const credit = creditLine(item?.track);
+    view.credit.replaceWith(credit);
+    view.credit = credit;
     const art = item?.track?.artworkUrl && safeLink(item.track.artworkUrl);
     const cover = art ? el('img', { class: 'deck-cover', src: art, alt: '', width: '96', height: '96' }) : el('div', { class: 'deck-cover cover-empty', text: '♪' });
-    view.cover.replaceWith(view.cover = cover);
+    view.cover.replaceWith(cover);
+    view.cover = cover;
     view.play.textContent = deck.audio().paused ? '▶' : '❚❚';
     view.play.disabled = !item || c.snapshot?.mode !== 'manual';
     drawDeck(deck);
@@ -386,7 +397,9 @@ function showConsole(venue, { onBack } = {}) {
 
   const renderQueue = () => {
     const queue = c.snapshot?.queue ?? [];
-    queueHint.textContent = queue.length ? '' : c.snapshot?.mode === 'autodj' ? 'El AutoDJ está buscando pistas…' : 'La cola está vacía. Agrega pistas desde el catálogo.';
+    let hint = '';
+    if (!queue.length) hint = c.snapshot?.mode === 'autodj' ? 'El AutoDJ está buscando pistas…' : 'La cola está vacía. Agrega pistas desde el catálogo.';
+    queueHint.textContent = hint;
     const ids = queue.map((q) => q.id);
     const reorder = async (order) => {
       try { await call('PATCH', '/queue', { order }); preloadNext(); } catch (err) { say(err.message); }
@@ -417,7 +430,7 @@ function showConsole(venue, { onBack } = {}) {
   function applySnapshot(snap) {
     if (!snap) return;
     c.snapshot = snap;
-    statusPill.textContent = snap.status === 'playing' ? 'Al aire' : snap.status === 'paused' ? 'En pausa' : 'Apagada';
+    statusPill.textContent = STATUS_LABELS[snap.status] ?? 'Apagada';
     statusPill.className = `on-air ${snap.status}`;
     for (const [mode, button] of Object.entries(modeButtons)) button.setAttribute('aria-pressed', String(snap.mode === mode));
     if (c.started && snap.consoleId && snap.consoleId !== c.consoleId) loseControl();
@@ -437,9 +450,10 @@ function showConsole(venue, { onBack } = {}) {
       try {
         const data = await api(`/venues/${encodeURIComponent(venue.id)}/tracks/search?q=${encodeURIComponent(q)}`);
         if (q !== latest) return;
-        hint.textContent = data.tracks.length ? `${data.tracks.length} pistas${data.source === 'stale-cache' ? ' (del caché: el catálogo no responde)' : ''}.` : 'Sin resultados.';
+        const stale = data.source === 'stale-cache' ? ' (del caché: el catálogo no responde)' : '';
+        hint.textContent = data.tracks.length ? `${data.tracks.length} pistas${stale}.` : 'Sin resultados.';
         list.replaceChildren(...data.tracks.map((t) => el('li', {},
-          el('div', { class: 'queue-info' }, el('strong', { text: t.title }), el('small', { text: `${t.artist}${t.genre ? ` · ${t.genre}` : ''} · ${DJ.formatTime(t.durationSeconds)}` }), creditLine(t)),
+          el('div', { class: 'queue-info' }, el('strong', { text: t.title }), el('small', { text: `${artistLine(t)} · ${DJ.formatTime(t.durationSeconds)}` }), creditLine(t)),
           el('button', { type: 'button', class: 'add', text: '+ Cola', 'aria-label': `Agregar ${t.title} a la cola`, onclick: async (e) => {
             e.currentTarget.disabled = true;
             try { await call('POST', '/queue', { provider: t.provider, externalId: t.externalId }); say(`"${t.title}" se agregó a la cola.`); preloadNext(); } catch (err) { say(err.message); e.currentTarget.disabled = false; }
