@@ -356,7 +356,7 @@ function requestRow(request, onChange) {
       el('small', { text: `${request.artist} · pedida por ${request.guest_name} · ${when}` }),
       request.ai_reason ? el('small', { class: 'reason', text: request.ai_reason }) : null),
     el('span', { class: 'badge', text: REQUEST_STATUS_LABELS[request.status] || request.status }),
-    el('div', { class: 'actions' }, ...requestActions(request, onChange)));
+    el('div', { class: 'actions' }, ...requestActions(request, onChange), previewButton({ previewUrl: request.preview_url, trackId: request.id, title: request.title })));
 }
 
 // Detalle de un local: datos, link público, QR y peticiones con actualización periódica.
@@ -590,7 +590,7 @@ function songSearch(code, onPick) {
         trackCover(track),
         el('span', { class: 'track-info' }, el('strong', { text: track.title }), el('small', { text: `${track.artist} · ${track.genre}` })));
       pick.addEventListener('click', () => { void onPick(track, list); });
-      return el('li', {}, pick, previewButton(track));
+      return el('li', {}, pick);
     }));
   };
   const search = async (q) => {
@@ -649,6 +649,7 @@ function songRequestView(venue, code, { onRequested } = {}) {
 // ---------- Página pública del local: interfaz de DJ ----------
 // Muestra lo que suena (con portada y preview), la cola de próximas aceptadas y el buscador.
 const NOW_POLL_MS = 10000;
+const LIVE_REFRESH_MS = 2000;
 let nowPoll = null;
 
 function nowPlayingCard(song) {
@@ -658,8 +659,8 @@ function nowPlayingCard(song) {
     el('div', { class: 'now-info' },
       el('small', { class: 'eyebrow', text: 'Sonando ahora' }),
       el('strong', { text: song.title }),
-      el('span', { text: `${song.artist} · ${song.genre}` }),
-      previewButton({ ...song, trackId: song.id })));
+      el('span', { text: song.genre ? `${song.artist} · ${song.genre}` : song.artist }),
+      song.credit ? creditLine(song) : null));
 }
 
 function venuePage(venue, code) {
@@ -670,15 +671,27 @@ function venuePage(venue, code) {
     try {
       const data = await api(`/public/venues/${encodeURIComponent(code)}/now`);
       nowArea.replaceChildren(nowPlayingCard(data.nowPlaying));
-      queueHint.textContent = data.queue.length ? '' : 'No hay canciones en cola. Las aceptadas por el DJ aparecen aquí.';
+      queueHint.textContent = data.queue.length ? '' : data.station ? 'La emisora está eligiendo las próximas canciones.' : 'No hay canciones en cola. Las aceptadas por el DJ aparecen aquí.';
       queueList.replaceChildren(...data.queue.map((song) => el('li', {}, trackCover({ ...song, trackId: song.id }, 40),
-        el('span', { class: 'track-info' }, el('strong', { text: song.title }), el('small', { text: song.artist })))));
+        el('span', { class: 'track-info' }, el('strong', { text: song.title }), el('small', { text: song.artist })),
+        song.source === 'request' ? el('span', { class: 'requested', text: 'Pedida' }) : null)));
     } catch (err) { queueHint.textContent = err.message; }
   };
   const { view } = songRequestView(venue, code, { onRequested: refresh });
+  // En vivo: el backend avisa por SSE cada cambio de la emisora y se vuelve a pedir /now (como mucho cada 2 s).
+  // Si el SSE no está conectado, se consulta cada 10 s.
+  let live = false;
+  let pending = null;
+  const refreshSoon = () => { if (!pending) pending = setTimeout(() => { pending = null; void refresh(); }, LIVE_REFRESH_MS); };
+  if ('EventSource' in window) {
+    const source = new EventSource(apiUrl(`/public/venues/${encodeURIComponent(code)}/events`));
+    source.addEventListener('ready', () => { live = true; refreshSoon(); });
+    source.addEventListener('update', refreshSoon);
+    source.onerror = () => { live = false; };
+  }
   clearInterval(nowPoll);
   void refresh();
-  nowPoll = setInterval(() => { if (!document.hidden) void refresh(); }, NOW_POLL_MS);
+  nowPoll = setInterval(() => { if (!document.hidden && !live) void refresh(); }, NOW_POLL_MS);
   return el('div', { class: 'venue-page' },
     el('header', { class: 'venue-page-head' }, el('h1', { text: venue.name }), venue.ambience ? el('p', { text: venue.ambience }) : null),
     el('div', { class: 'venue-page-body' },
