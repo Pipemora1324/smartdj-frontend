@@ -66,6 +66,18 @@ Al iniciar sesión se abre una **vista de gestión** de página completa (`showD
   - Botón **Descargar QR (PNG)**, que guarda `qr-<nombre-del-local>.png`, y **Copiar link**.
   - Se verificó decodificando el PNG descargado: contiene exactamente el link público.
 
+## Calidad: SonarCloud (bloque F)
+
+El Quality Gate fallaba por **seguridad** (E) y **fiabilidad** (C). Lo que se corrigió:
+
+- **XSS en el DOM (BLOCKER):** el nombre del local se insertaba con `innerHTML`. Ahora todo dato externo va con `textContent` (bloques B a D).
+- **CSRF del lado del cliente:** `apiUrl()` verifica que cada petición quede dentro de `API_BASE/api/`. Prueba: `node --test "scripts/*.test.mjs"`.
+- **Promesas sin manejar:** se marcan con `void` las que ya manejan su error. Además se corrigió un `return openSession()` dentro de un `try` que no capturaba el error.
+- **Contraseña fija** en `scripts/qa-login-flow.mjs`: ahora se genera al azar.
+- **Dockerfile:** el `COPY .` recursivo publicaba `CLAUDE.md`, el `Dockerfile` y los scripts. Ahora copia solo `index.html`, `app.js`, `config.js` y `styles.css`, con `nginx-unprivileged`, sin root, en el puerto 8080.
+
+Se mantiene, como aceptado: `scripts/dev-static-server.mjs` usa `http`, porque es un servidor solo para desarrollo local.
+
 ## Estado en vivo de una petición (gRPC en el backend)
 
 El navegador **no habla gRPC**: usa REST con el backend. Por dentro, el backend evalúa cada petición llamando al motor de IA por **gRPC con streaming** y reenvía cada etapa al navegador por **SSE**.

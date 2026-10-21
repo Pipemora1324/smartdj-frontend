@@ -8,6 +8,14 @@ Frontend estático de SmartDJ (HTML, CSS y JavaScript nativo, sin build). Lo usa
 - `scripts/`: servidor estático local y scripts de QA.
 - Despliegue en Vercel. El API vive en el repo `smartdj-backend` (Render + Supabase).
 
+## Convenciones técnicas (bloques B–F)
+
+- **Vistas:** `showView()` reemplaza la portada por una vista de página completa: el panel del dueño (`showDashboard`) o la página pública del local (`publicRequest` → `venuePage`). `showLanding()` vuelve a la portada. El modal (`#authDialog`) queda para el login y el estado de una petición.
+- **DOM:** construye siempre con `el()`. Todo dato externo (servidor, URL, usuario) va con `textContent`; `innerHTML` solo con texto fijo.
+- **API:** usa `api(path)`, que pasa por `apiUrl()` y no sale de `API_BASE/api/`. Las llamadas `async` que no se esperan van con `void` y manejan su propio error.
+- **Librerías por CDN:** con versión fija y SRI (supabase-js en jsDelivr y qrcode-generator en cdnjs). Verifica el hash al cambiar de versión.
+- **Pruebas:** `node --test "scripts/*.test.mjs"`. Las pruebas de navegador usan una copia con un Supabase simulado y el backend local, nunca producción.
+
 ## Reglas fijas
 
 - **Idioma del código:** todo en inglés: variables, funciones, archivos, rutas, tablas y columnas nuevas.
