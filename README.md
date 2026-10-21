@@ -44,6 +44,15 @@ El link público del local (`/?venue=<código>`) muestra un **buscador**:
 - Después se muestra el estado en vivo por etapas.
 - Todo dato externo (nombre del local, canciones) se inserta con `textContent`.
 
+## Panel del dueño (bloque C)
+
+Al iniciar sesión se abre una **vista de gestión** de página completa (`showDashboard()` en `app.js`) en lugar del modal:
+
+- Lista de locales del dueño, que puede tener varios, y formulario para **crear** uno nuevo.
+- Por local: **editar** los datos, el link público con botón para copiarlo y las **peticiones recientes**. Cada petición muestra portada, canción, quién la pidió y el motivo del motor, con acciones para **aceptar**, **rechazar** y **marcar como sonada**.
+- Las peticiones se actualizan cada 5 s por polling, pausado cuando la pestaña no está visible.
+- "Cerrar sesión" vuelve a la portada.
+
 ## Estado en vivo de una petición (gRPC en el backend)
 
 El navegador **no habla gRPC**: usa REST con el backend. Por dentro, el backend evalúa cada petición llamando al motor de IA por **gRPC con streaming** y reenvía cada etapa al navegador por **SSE**.
