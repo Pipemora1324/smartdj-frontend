@@ -360,7 +360,7 @@ function requestRow(request, onChange) {
 }
 
 // Detalle de un local: datos, link público, QR y peticiones con actualización periódica.
-function venueDetail(venue, { onEdited }) {
+function venueDetail(venue, { onEdited, onConsole }) {
   const list = el('ul', { class: 'requests' });
   const info = el('p', { class: 'notice', text: 'Cargando peticiones…' });
   const header = el('div', { class: 'venue-head' });
@@ -384,6 +384,7 @@ function venueDetail(venue, { onEdited }) {
     el('div', {},
       el('h2', { text: venue.name }),
       el('p', { text: `${VENUE_KIND_LABELS[venue.kind] || venue.kind} · ${venue.ambience}` })),
+    el('button', { type: 'button', class: 'console-open', text: '🎧 Consola de DJ', onclick: () => onConsole?.(venue) }),
     el('button', { type: 'button', class: 'switch', text: 'Editar local', onclick: () => {
       editArea.replaceChildren(venueForm(venue, async (data) => {
         const saved = await api(`/venues/${encodeURIComponent(venue.id)}`, { method: 'PATCH', body: JSON.stringify(data) });
@@ -451,14 +452,14 @@ function shareBox(venue) {
     status);
 }
 
-async function showDashboard(user) {
+async function showDashboard(user, { selectId } = {}) {
   let venues = [];
   try { venues = await api('/venues'); }
   catch (err) {
     if (err.status === 401) { clearToken(); showLanding(); if (!dialog.open) dialog.showModal(); return authForm('login'); }
     venues = [];
   }
-  let selectedId = venues[0]?.id || null;
+  let selectedId = venues.find((v) => v.id === selectId)?.id || venues[0]?.id || null;
   const sidebar = el('aside', { class: 'venue-list' });
   const main = el('div', { class: 'panel-main' });
   const select = (id) => { selectedId = id; renderSidebar(); renderMain(); };
@@ -468,7 +469,7 @@ async function showDashboard(user) {
     el('button', { type: 'button', text: '+ Nuevo local', onclick: () => select(null) }));
   const renderMain = () => {
     const venue = venues.find((v) => v.id === selectedId);
-    if (venue) return main.replaceChildren(venueDetail(venue, { onEdited: () => renderSidebar() }));
+    if (venue) return main.replaceChildren(venueDetail(venue, { onEdited: () => renderSidebar(), onConsole: (v) => showConsole(v, { onBack: () => showDashboard(user, { selectId: v.id }) }) }));
     stopPanelPoll();
     main.replaceChildren(el('h2', { text: 'Nuevo local' }), el('p', { text: 'Registra un local para activar el DJ inteligente.' }),
       venueForm(null, async (data) => { const created = await api('/venues', { method: 'POST', body: JSON.stringify(data) }); venues.unshift(created); select(created.id); }));
