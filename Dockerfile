@@ -1,3 +1,3 @@
-FROM nginx:1.27-alpine
-COPY . /usr/share/nginx/html
-RUN rm -f /usr/share/nginx/html/Dockerfile
+# Solo los archivos públicos del sitio (nada de scripts, README ni archivos locales); nginx sin root en el puerto 8080.
+FROM nginxinc/nginx-unprivileged:1.27-alpine
+COPY index.html app.js config.js styles.css /usr/share/nginx/html/

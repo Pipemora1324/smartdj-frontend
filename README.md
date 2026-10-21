@@ -89,7 +89,7 @@ El navegador **no habla gRPC**: usa REST con el backend. Por dentro, el backend 
 
 ```bash
 docker build -t smartdj-frontend .
-docker run -p 5173:80 smartdj-frontend
+docker run -p 5173:8080 smartdj-frontend
 ```
 
 ## Backend
