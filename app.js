@@ -287,7 +287,7 @@ const REQUEST_STAGES = [
   ['analyzing_key', 'Analizando la tonalidad'],
   ['result', 'Resultado'],
 ];
-function requestStatusView(requestId) {
+function requestStatusView(requestId, track = null) {
   const items = new Map(REQUEST_STAGES.map(([stage, label]) => [stage, el('li', { class: 'stage-pending', text: label })]));
   const message = el('p', { class: 'notice', text: 'Tu petición está en la cola.' });
   const outcome = el('div');
@@ -332,10 +332,116 @@ function requestStatusView(requestId) {
   dialog.addEventListener('close', stop, { once: true });
   render(el('section', { class: 'auth' },
     el('h2', { text: 'Petición recibida' }),
+    track ? el('div', { class: 'requested-track' }, trackCover(track, 72), el('span', { class: 'track-info' }, el('strong', { text: track.title }), el('small', { text: track.artist }))) : null,
     message,
     el('ul', { class: 'stages' }, ...items.values()),
     outcome,
     el('button', { type: 'button', text: 'Cerrar', onclick: () => dialog.close() })));
 }
-async function publicRequest(code){try{const venue=await api(`/public/venues/${encodeURIComponent(code)}`);content.innerHTML=`<section class="auth"><h2>Pide una canción</h2><p>Estás en <b>${venue.name}</b> · ${venue.ambience}</p><form id="requestForm"><input name="guestName" placeholder="Tu nombre" required><input name="title" placeholder="Canción" required><input name="artist" placeholder="Artista" required><input name="genre" placeholder="Género (ej. Salsa)" required><input name="bpm" type="number" min="1" max="300" placeholder="BPM (opcional)"><input name="musicalKey" placeholder="Tonalidad (opcional, ej. Am)"><p class="error" id="requestError"></p><button>Enviar petición</button></form></section>`;dialog.showModal();document.querySelector('#requestForm').onsubmit=async e=>{e.preventDefault();const d=Object.fromEntries(new FormData(e.target));if(!d.bpm)delete d.bpm;else d.bpm=Number(d.bpm);if(!d.musicalKey)delete d.musicalKey;try{const created=await api(`/public/venues/${encodeURIComponent(code)}/requests`,{method:'POST',body:JSON.stringify(d)});requestStatusView(created.id)}catch(err){document.querySelector('#requestError').textContent=err.message}}}catch{alert('No encontramos este establecimiento. Revisa el código compartido.')}}
+// ---------- Pedir una canción (link público del local) ----------
+// El cliente busca en el buscador del backend (iTunes desde el servidor) y al tocar una canción la pide.
+const SEARCH_DEBOUNCE_MS = 400;
+let previewAudio = null;
+function stopPreview() { if (previewAudio) { previewAudio.pause(); previewAudio = null; } }
+
+function trackCover(track, size = 56) {
+  return track.artworkUrl
+    ? el('img', { class: 'cover', src: track.artworkUrl, alt: '', width: String(size), height: String(size), loading: 'lazy' })
+    : el('div', { class: 'cover cover-empty', 'aria-hidden': 'true', text: '♪' });
+}
+
+// Botón para escuchar los 30 s de muestra; solo suena una a la vez.
+function previewButton(track) {
+  if (!track.previewUrl) return null;
+  const btn = el('button', { type: 'button', class: 'preview', 'aria-label': `Escuchar 30 segundos de ${track.title}`, text: '▶ 30 s' });
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const playingThis = previewAudio && previewAudio.dataset.trackId === track.trackId;
+    stopPreview();
+    document.querySelectorAll('button.preview').forEach((b) => { b.textContent = '▶ 30 s'; });
+    if (playingThis) return;
+    previewAudio = new Audio(track.previewUrl);
+    previewAudio.dataset.trackId = track.trackId;
+    previewAudio.addEventListener('ended', () => { btn.textContent = '▶ 30 s'; });
+    previewAudio.play().then(() => { btn.textContent = '■ Detener'; }).catch(() => { btn.textContent = 'Sin audio'; });
+  });
+  return btn;
+}
+
+// Buscador con resultados; onPick(track) se llama al tocar una canción.
+function songSearch(code, onPick) {
+  const input = el('input', { type: 'search', name: 'q', placeholder: 'Busca una canción o un artista', autocomplete: 'off', maxlength: '100', 'aria-label': 'Buscar canción' });
+  const hint = el('p', { class: 'notice', text: 'Escribe al menos 2 letras para buscar.' });
+  const list = el('ul', { class: 'results' });
+  let timer = null;
+  let latest = '';
+  const show = (tracks) => {
+    if (!tracks.length) { hint.textContent = 'No encontramos canciones con esa búsqueda.'; list.replaceChildren(); return; }
+    hint.textContent = 'Toca una canción para pedirla.';
+    list.replaceChildren(...tracks.map((track) => {
+      const pick = el('button', { type: 'button', class: 'track', 'aria-label': `Pedir ${track.title} de ${track.artist}` },
+        trackCover(track),
+        el('span', { class: 'track-info' }, el('strong', { text: track.title }), el('small', { text: `${track.artist} · ${track.genre}` })));
+      pick.addEventListener('click', () => onPick(track, list));
+      return el('li', {}, pick, previewButton(track));
+    }));
+  };
+  const search = async (q) => {
+    hint.textContent = 'Buscando…';
+    try {
+      const tracks = await api(`/public/venues/${encodeURIComponent(code)}/search?q=${encodeURIComponent(q)}`);
+      if (q === latest) show(tracks);
+    } catch (err) { if (q === latest) { hint.textContent = err.message; list.replaceChildren(); } }
+  };
+  input.addEventListener('input', () => {
+    clearTimeout(timer);
+    latest = input.value.trim();
+    if (latest.length < 2) { hint.textContent = 'Escribe al menos 2 letras para buscar.'; list.replaceChildren(); return; }
+    timer = setTimeout(() => search(latest), SEARCH_DEBOUNCE_MS);
+  });
+  return { root: el('div', { class: 'song-search' }, input, hint, list), input };
+}
+
+function songRequestView(venue, code) {
+  const name = el('input', { name: 'guestName', placeholder: 'Tu nombre (opcional)', maxlength: '60', autocomplete: 'given-name', 'aria-label': 'Tu nombre (opcional)' });
+  const formError = el('p', { class: 'error', id: 'formError' });
+  let sending = false;
+  const { root, input } = songSearch(code, async (track, list) => {
+    if (sending) return;
+    const guestName = name.value.trim();
+    if (guestName && guestName.length < 2) return setError(formError, 'El nombre debe tener al menos 2 letras (o déjalo vacío).');
+    sending = true;
+    list.querySelectorAll('button').forEach((b) => { b.disabled = true; });
+    setError(formError, '');
+    try {
+      const created = await api(`/public/venues/${encodeURIComponent(code)}/requests`, { method: 'POST', body: JSON.stringify({ trackId: track.trackId, ...(guestName ? { guestName } : {}) }) });
+      stopPreview();
+      requestStatusView(created.id, track);
+    } catch (err) {
+      sending = false;
+      list.querySelectorAll('button').forEach((b) => { b.disabled = false; });
+      setError(formError, err.message);
+    }
+  });
+  const view = el('section', { class: 'auth' },
+    el('h2', { text: 'Pide una canción' }),
+    el('p', {}, 'Estás en ', el('b', { text: venue.name }), venue.ambience ? ` · ${venue.ambience}` : ''),
+    name, root, formError);
+  return { view, input };
+}
+
+async function publicRequest(code) {
+  let venue;
+  try { venue = await api(`/public/venues/${encodeURIComponent(code)}`); }
+  catch {
+    render(el('section', { class: 'auth' }, el('h2', { text: 'Local no encontrado' }), el('p', { text: 'Revisa el código o el QR que te compartieron.' })));
+    if (!dialog.open) dialog.showModal();
+    return;
+  }
+  const { view, input } = songRequestView(venue, code);
+  render(view);
+  if (!dialog.open) dialog.showModal();
+  dialog.addEventListener('close', stopPreview, { once: true });
+  input.focus();
+}
 const publicCode=new URLSearchParams(location.search).get('venue');if(publicCode) publicRequest(publicCode);
