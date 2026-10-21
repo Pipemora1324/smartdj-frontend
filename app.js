@@ -273,7 +273,165 @@ function resetForm(email, message) {
     el('button', { type: 'button', class: 'switch', text: 'Volver a ingresar', onclick: () => authForm('login') })));
   code.focus();
 }
-async function showDashboard(user){let venues=[];try{venues=await api('/venues')}catch(err){if(err.status===401){clearToken();if(!dialog.open)dialog.showModal();return authForm('login');}}const existing=venues.length?`<p>Establecimientos activos:</p>${venues.map(v=>`<p><b>${v.name}</b><br><small>Petición pública: ${location.origin}/?venue=${v.public_code}</small></p>`).join('')}<hr>`:'';content.innerHTML=`<section class="auth"><h2>Hola, ${user.name}</h2>${existing}<p>Registra un establecimiento para activar el DJ inteligente.</p><form id="venueForm" novalidate><input name="name" placeholder="Nombre del establecimiento"><p class="field-error" data-error-for="name"></p><select name="kind"><option value="restaurant">Restaurante</option><option value="cafe">Café</option><option value="salsa_bar">Bar de Salsa</option><option value="nightclub">Discoteca</option><option value="lounge">Lounge</option><option value="other">Otro</option></select><textarea name="ambience" placeholder="Describe el ambiente que deseas"></textarea><p class="field-error" data-error-for="ambience"></p><p class="error" id="venueError"></p><button type="submit">Crear establecimiento</button></form><button type="button" class="switch" id="logoutBtn">Cerrar sesión</button></section>`;document.querySelector('#logoutBtn').onclick=async()=>{if(supabaseClient)await supabaseClient.auth.signOut().catch(()=>{});clearToken();authForm('login');};document.querySelector('#venueForm').onsubmit=async e=>{e.preventDefault();const data=Object.fromEntries(new FormData(e.target));setError(document.querySelector('#venueError'),'');const nameErr=validateName(data.name);setError(document.querySelector('[data-error-for="name"]'),nameErr);const ambienceErr=(data.ambience||'').trim().length<2?'Describe el ambiente (mínimo 2 caracteres).':null;setError(document.querySelector('[data-error-for="ambience"]'),ambienceErr);if(nameErr||ambienceErr)return setError(document.querySelector('#venueError'),nameErr||ambienceErr);try{await api('/venues',{method:'POST',body:JSON.stringify({name:data.name.trim(),kind:data.kind,ambience:data.ambience.trim()})});await showDashboard(user)}catch(err){setError(document.querySelector('#venueError'),err.message)}}}
+// ---------- Vistas de página completa (panel del dueño y página pública del local) ----------
+// Reemplazan la portada (main#inicio) sin recargar; showLanding() la vuelve a mostrar.
+function appView() {
+  let view = document.querySelector('#app-view');
+  if (!view) {
+    view = el('section', { id: 'app-view', class: 'app-view' });
+    document.querySelector('#inicio').after(view);
+  }
+  return view;
+}
+function showView(...nodes) {
+  if (dialog.open) dialog.close();
+  document.querySelector('#inicio').hidden = true;
+  const view = appView();
+  view.hidden = false;
+  view.replaceChildren(...nodes);
+  window.scrollTo(0, 0);
+}
+function showLanding() {
+  const view = document.querySelector('#app-view');
+  if (view) { view.hidden = true; view.replaceChildren(); }
+  document.querySelector('#inicio').hidden = false;
+}
+
+// ---------- Panel del dueño ----------
+const VENUE_KIND_LABELS = { restaurant: 'Restaurante', cafe: 'Café', salsa_bar: 'Bar de salsa', nightclub: 'Discoteca', lounge: 'Lounge', other: 'Otro' };
+const REQUEST_STATUS_LABELS = { queued: 'En cola', accepted: 'Aceptada', bridging: 'Con transición', rejected: 'Rechazada', played: 'Sonada' };
+const PANEL_POLL_MS = 5000;
+let panelPoll = null;
+function stopPanelPoll() { clearInterval(panelPoll); panelPoll = null; }
+const publicLink = (venue) => `${location.origin}/?venue=${encodeURIComponent(venue.public_code)}`;
+
+// Formulario de local (crear o editar). onSave(datos) debe devolver una promesa.
+function venueForm(venue, onSave, onCancel) {
+  const name = el('input', { name: 'name', placeholder: 'Nombre del local', maxlength: '120', 'aria-label': 'Nombre del local' });
+  const kind = el('select', { name: 'kind', 'aria-label': 'Tipo de local' }, ...Object.entries(VENUE_KIND_LABELS).map(([value, label]) => el('option', { value, text: label })));
+  const ambience = el('textarea', { name: 'ambience', placeholder: 'Describe el ambiente que deseas', maxlength: '500', 'aria-label': 'Ambiente' });
+  if (venue) { name.value = venue.name; kind.value = venue.kind; ambience.value = venue.ambience; }
+  const error = el('p', { class: 'error' });
+  const form = el('form', { class: 'venue-form', novalidate: '' }, name, kind, ambience, error,
+    el('div', { class: 'row' }, el('button', { type: 'submit', text: venue ? 'Guardar cambios' : 'Crear local' }),
+      onCancel ? el('button', { type: 'button', class: 'switch', text: 'Cancelar', onclick: onCancel }) : null));
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const data = { name: name.value.trim(), kind: kind.value, ambience: ambience.value.trim() };
+    const problem = validateName(data.name) || (data.ambience.length < 2 ? 'Describe el ambiente (mínimo 2 caracteres).' : null);
+    if (problem) return setError(error, problem);
+    setError(error, '');
+    try { await onSave(data); } catch (err) { setError(error, err.message); }
+  });
+  return form;
+}
+
+// Botones de acción según el estado actual de la petición.
+function requestActions(request, onChange) {
+  const actions = [];
+  if (request.status !== 'accepted' && request.status !== 'played') actions.push(['accepted', 'Aceptar']);
+  if (request.status !== 'rejected' && request.status !== 'played') actions.push(['rejected', 'Rechazar']);
+  if (request.status !== 'played' && request.status !== 'rejected') actions.push(['played', 'Marcar como sonada']);
+  return actions.map(([status, label]) => el('button', { type: 'button', class: `action action-${status}`, text: label, onclick: (e) => onChange(request, status, e.currentTarget) }));
+}
+
+function requestRow(request, onChange) {
+  const cover = request.artwork_url
+    ? el('img', { class: 'cover', src: request.artwork_url, alt: '', width: '48', height: '48', loading: 'lazy' })
+    : el('div', { class: 'cover cover-empty', 'aria-hidden': 'true', text: '♪' });
+  const when = new Date(request.created_at).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
+  return el('li', { class: `request status-${request.status}` },
+    cover,
+    el('div', { class: 'request-info' },
+      el('strong', { text: request.title }),
+      el('small', { text: `${request.artist} · pedida por ${request.guest_name} · ${when}` }),
+      request.ai_reason ? el('small', { class: 'reason', text: request.ai_reason }) : null),
+    el('span', { class: 'badge', text: REQUEST_STATUS_LABELS[request.status] || request.status }),
+    el('div', { class: 'actions' }, ...requestActions(request, onChange)));
+}
+
+// Detalle de un local: datos, link público, QR y peticiones con actualización periódica.
+function venueDetail(venue, { onEdited }) {
+  const list = el('ul', { class: 'requests' });
+  const info = el('p', { class: 'notice', text: 'Cargando peticiones…' });
+  const header = el('div', { class: 'venue-head' });
+  const editArea = el('div');
+  const refresh = async () => {
+    try {
+      const data = await api(`/venues/${encodeURIComponent(venue.id)}/dashboard?limit=50`);
+      info.textContent = data.requests.length ? `Peticiones recientes (se actualizan cada ${PANEL_POLL_MS / 1000} s).` : 'Todavía no hay peticiones. Comparte el link o el QR del local.';
+      list.replaceChildren(...data.requests.map((r) => requestRow(r, changeStatus)));
+    } catch (err) {
+      if (err.status === 401) { stopPanelPoll(); clearToken(); showLanding(); authForm('login'); return dialog.showModal(); }
+      info.textContent = err.message;
+    }
+  };
+  const changeStatus = async (request, status, button) => {
+    button.disabled = true;
+    try { await api(`/venues/${encodeURIComponent(venue.id)}/requests/${encodeURIComponent(request.id)}`, { method: 'PATCH', body: JSON.stringify({ status }) }); await refresh(); }
+    catch (err) { info.textContent = err.message; button.disabled = false; }
+  };
+  const renderHeader = () => header.replaceChildren(
+    el('div', {},
+      el('h2', { text: venue.name }),
+      el('p', { text: `${VENUE_KIND_LABELS[venue.kind] || venue.kind} · ${venue.ambience}` })),
+    el('button', { type: 'button', class: 'switch', text: 'Editar local', onclick: () => {
+      editArea.replaceChildren(venueForm(venue, async (data) => {
+        const saved = await api(`/venues/${encodeURIComponent(venue.id)}`, { method: 'PATCH', body: JSON.stringify(data) });
+        Object.assign(venue, saved);
+        editArea.replaceChildren();
+        renderHeader();
+        onEdited(saved);
+      }, () => editArea.replaceChildren()));
+    } }));
+  renderHeader();
+  stopPanelPoll();
+  refresh();
+  panelPoll = setInterval(() => { if (!document.hidden) refresh(); }, PANEL_POLL_MS);
+  return el('div', { class: 'venue-detail' }, header, editArea, shareBox(venue), el('h3', { text: 'Peticiones' }), info, list);
+}
+
+// Link público del local con botón para copiarlo (el QR se agrega en shareBox del bloque D).
+function shareBox(venue) {
+  const link = publicLink(venue);
+  const status = el('small', { class: 'copy-status' });
+  return el('div', { class: 'share' },
+    el('p', {}, 'Link público: ', el('a', { href: link, target: '_blank', rel: 'noopener', text: link })),
+    el('button', { type: 'button', class: 'switch', text: 'Copiar link', onclick: async () => {
+      try { await navigator.clipboard.writeText(link); status.textContent = 'Link copiado.'; } catch { status.textContent = 'No se pudo copiar; selecciónalo y cópialo a mano.'; }
+    } }),
+    status);
+}
+
+async function showDashboard(user) {
+  let venues = [];
+  try { venues = await api('/venues'); }
+  catch (err) {
+    if (err.status === 401) { clearToken(); showLanding(); if (!dialog.open) dialog.showModal(); return authForm('login'); }
+    venues = [];
+  }
+  let selectedId = venues[0]?.id || null;
+  const sidebar = el('aside', { class: 'venue-list' });
+  const main = el('div', { class: 'panel-main' });
+  const select = (id) => { selectedId = id; renderSidebar(); renderMain(); };
+  const renderSidebar = () => sidebar.replaceChildren(
+    el('h3', { text: 'Tus locales' }),
+    venues.length ? el('ul', {}, ...venues.map((v) => el('li', {}, el('button', { type: 'button', class: v.id === selectedId ? 'venue-item selected' : 'venue-item', text: v.name, onclick: () => select(v.id) })))) : el('p', { text: 'Aún no tienes locales.' }),
+    el('button', { type: 'button', text: '+ Nuevo local', onclick: () => select(null) }));
+  const renderMain = () => {
+    const venue = venues.find((v) => v.id === selectedId);
+    if (venue) return main.replaceChildren(venueDetail(venue, { onEdited: () => renderSidebar() }));
+    stopPanelPoll();
+    main.replaceChildren(el('h2', { text: 'Nuevo local' }), el('p', { text: 'Registra un local para activar el DJ inteligente.' }),
+      venueForm(null, async (data) => { const created = await api('/venues', { method: 'POST', body: JSON.stringify(data) }); venues.unshift(created); select(created.id); }));
+  };
+  const logout = async () => { stopPanelPoll(); if (supabaseClient) await supabaseClient.auth.signOut().catch(() => {}); clearToken(); showLanding(); };
+  renderSidebar();
+  renderMain();
+  showView(el('div', { class: 'panel' },
+    el('div', { class: 'panel-bar' }, el('h1', { text: `Hola, ${user.name}` }), el('button', { type: 'button', id: 'logoutBtn', class: 'switch', text: 'Cerrar sesión', onclick: logout })),
+    el('div', { class: 'panel-body' }, sidebar, main)));
+}
 document.querySelector('#openLogin').onclick=()=>{authForm();dialog.showModal()};document.querySelector('#openRegister').onclick=document.querySelector('#heroStart').onclick=()=>{authForm('register');dialog.showModal()};document.querySelector('#closeDialog').onclick=()=>dialog.close();
 document.querySelector('#mixButton').onclick=()=>{const st=document.querySelector('#mixStatus');st.textContent='Puente armónico generado · mezclando…';document.querySelectorAll('.platter').forEach(p=>p.style.animationDuration='2s');setTimeout(()=>{st.textContent='Transición completada · 94% match';document.querySelectorAll('.platter').forEach(p=>p.style.animationDuration='8s')},1800)};
 document.querySelector('#crossfade').oninput=e=>document.querySelector('.deck').style.filter=`brightness(${.8+e.target.value/500})`;
