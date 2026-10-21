@@ -560,7 +560,7 @@ function songSearch(code, onPick) {
   return { root: el('div', { class: 'song-search' }, input, hint, list), input };
 }
 
-function songRequestView(venue, code) {
+function songRequestView(venue, code, { onRequested } = {}) {
   const name = el('input', { name: 'guestName', placeholder: 'Tu nombre (opcional)', maxlength: '60', autocomplete: 'given-name', 'aria-label': 'Tu nombre (opcional)' });
   const formError = el('p', { class: 'error', id: 'formError' });
   let sending = false;
@@ -592,14 +592,57 @@ async function publicRequest(code) {
   let venue;
   try { venue = await api(`/public/venues/${encodeURIComponent(code)}`); }
   catch {
-    render(el('section', { class: 'auth' }, el('h2', { text: 'Local no encontrado' }), el('p', { text: 'Revisa el código o el QR que te compartieron.' })));
-    if (!dialog.open) dialog.showModal();
+    showView(el('section', { class: 'auth' }, el('h2', { text: 'Local no encontrado' }), el('p', { text: 'Revisa el código o el QR que te compartieron.' })));
     return;
   }
-  const { view, input } = songRequestView(venue, code);
-  render(view);
-  if (!dialog.open) dialog.showModal();
-  dialog.addEventListener('close', stopPreview, { once: true });
-  input.focus();
+  showView(venuePage(venue, code));
+  document.querySelector('.venue-page input[type=search]')?.focus();
 }
 const publicCode=new URLSearchParams(location.search).get('venue');if(publicCode) publicRequest(publicCode);
+      if (!dialog.open) dialog.showModal();
+      // Al cerrar el estado se puede pedir otra canción.
+      dialog.addEventListener('close', () => {
+        sending = false;
+        list.querySelectorAll('button').forEach((b) => { b.disabled = false; });
+        onRequested?.();
+      }, { once: true });
+// ---------- Página pública del local: interfaz de DJ ----------
+// Muestra lo que suena (con portada y preview), la cola de próximas aceptadas y el buscador.
+const NOW_POLL_MS = 10000;
+let nowPoll = null;
+
+function nowPlayingCard(song) {
+  if (!song) return el('div', { class: 'now-card empty' }, el('p', { text: 'Todavía no suena ninguna canción pedida. ¡Pide la primera!' }));
+  return el('div', { class: 'now-card' },
+    trackCover({ ...song, trackId: song.id }, 160),
+    el('div', { class: 'now-info' },
+      el('small', { class: 'eyebrow', text: 'Sonando ahora' }),
+      el('strong', { text: song.title }),
+      el('span', { text: `${song.artist} · ${song.genre}` }),
+      previewButton({ ...song, trackId: song.id })));
+}
+
+function venuePage(venue, code) {
+  const nowArea = el('div', { class: 'now-area' }, el('p', { class: 'notice', text: 'Cargando lo que suena…' }));
+  const queueList = el('ol', { class: 'queue' });
+  const queueHint = el('p', { class: 'notice' });
+  const refresh = async () => {
+    try {
+      const data = await api(`/public/venues/${encodeURIComponent(code)}/now`);
+      nowArea.replaceChildren(nowPlayingCard(data.nowPlaying));
+      queueHint.textContent = data.queue.length ? '' : 'No hay canciones en cola. Las aceptadas por el DJ aparecen aquí.';
+      queueList.replaceChildren(...data.queue.map((song) => el('li', {}, trackCover({ ...song, trackId: song.id }, 40),
+        el('span', { class: 'track-info' }, el('strong', { text: song.title }), el('small', { text: song.artist })))));
+    } catch (err) { queueHint.textContent = err.message; }
+  };
+  const { view } = songRequestView(venue, code, { onRequested: refresh });
+  clearInterval(nowPoll);
+  refresh();
+  nowPoll = setInterval(() => { if (!document.hidden) refresh(); }, NOW_POLL_MS);
+  return el('div', { class: 'venue-page' },
+    el('header', { class: 'venue-page-head' }, el('h1', { text: venue.name }), venue.ambience ? el('p', { text: venue.ambience }) : null),
+    el('div', { class: 'venue-page-body' },
+      el('section', { class: 'dj-booth' }, nowArea, el('h2', { text: 'Próximas canciones' }), queueHint, queueList),
+      view));
+}
+
