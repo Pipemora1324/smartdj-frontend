@@ -593,6 +593,8 @@ function songSearch(code, onPick) {
   input.addEventListener('input', () => {
     clearTimeout(timer);
     latest = input.value.trim();
+    // Los resultados anteriores dejan de servir mientras llega la nueva búsqueda.
+    list.querySelectorAll('button.track').forEach((b) => { b.disabled = true; });
     if (latest.length < 2) { hint.textContent = 'Escribe al menos 2 letras para buscar.'; list.replaceChildren(); return; }
     timer = setTimeout(() => search(latest), SEARCH_DEBOUNCE_MS);
   });
@@ -614,6 +616,13 @@ function songRequestView(venue, code, { onRequested } = {}) {
       const created = await api(`/public/venues/${encodeURIComponent(code)}/requests`, { method: 'POST', body: JSON.stringify({ trackId: track.trackId, ...(guestName ? { guestName } : {}) }) });
       stopPreview();
       requestStatusView(created.id, track);
+      if (!dialog.open) dialog.showModal();
+      // Al cerrar el estado se puede pedir otra canción.
+      dialog.addEventListener('close', () => {
+        sending = false;
+        list.querySelectorAll('button').forEach((b) => { b.disabled = false; });
+        onRequested?.();
+      }, { once: true });
     } catch (err) {
       sending = false;
       list.querySelectorAll('button').forEach((b) => { b.disabled = false; });
@@ -627,24 +636,6 @@ function songRequestView(venue, code, { onRequested } = {}) {
   return { view, input };
 }
 
-async function publicRequest(code) {
-  let venue;
-  try { venue = await api(`/public/venues/${encodeURIComponent(code)}`); }
-  catch {
-    showView(el('section', { class: 'auth' }, el('h2', { text: 'Local no encontrado' }), el('p', { text: 'Revisa el código o el QR que te compartieron.' })));
-    return;
-  }
-  showView(venuePage(venue, code));
-  document.querySelector('.venue-page input[type=search]')?.focus();
-}
-const publicCode=new URLSearchParams(location.search).get('venue');if(publicCode) publicRequest(publicCode);
-      if (!dialog.open) dialog.showModal();
-      // Al cerrar el estado se puede pedir otra canción.
-      dialog.addEventListener('close', () => {
-        sending = false;
-        list.querySelectorAll('button').forEach((b) => { b.disabled = false; });
-        onRequested?.();
-      }, { once: true });
 // ---------- Página pública del local: interfaz de DJ ----------
 // Muestra lo que suena (con portada y preview), la cola de próximas aceptadas y el buscador.
 const NOW_POLL_MS = 10000;
@@ -685,3 +676,14 @@ function venuePage(venue, code) {
       view));
 }
 
+async function publicRequest(code) {
+  let venue;
+  try { venue = await api(`/public/venues/${encodeURIComponent(code)}`); }
+  catch {
+    showView(el('section', { class: 'auth' }, el('h2', { text: 'Local no encontrado' }), el('p', { text: 'Revisa el código o el QR que te compartieron.' })));
+    return;
+  }
+  showView(venuePage(venue, code));
+  document.querySelector('.venue-page input[type=search]')?.focus();
+}
+const publicCode=new URLSearchParams(location.search).get('venue');if(publicCode) publicRequest(publicCode);
