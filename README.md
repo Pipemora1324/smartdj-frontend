@@ -53,6 +53,19 @@ Al iniciar sesión se abre una **vista de gestión** de página completa (`showD
 - Las peticiones se actualizan cada 5 s por polling, pausado cuando la pestaña no está visible.
 - "Cerrar sesión" vuelve a la portada.
 
+## Link público con interfaz de DJ y QR (bloque D)
+
+- **`/?venue=<código>`** abre una página completa del local:
+  - **Sonando ahora**: la última canción marcada como sonada, con portada y botón de preview de 30 s si existe.
+  - **Próximas canciones**: las aceptadas por el DJ.
+  - El **buscador** para pedir.
+
+  Los datos vienen de `GET /api/public/venues/:code/now` y se refrescan cada 10 s. Al pedir una canción, su estado en vivo se muestra en un modal; al cerrarlo se puede pedir otra.
+- **QR por local** en el panel del dueño:
+  - Se genera en el navegador con `qrcode-generator` 1.4.4, cargado desde cdnjs con SRI.
+  - Botón **Descargar QR (PNG)**, que guarda `qr-<nombre-del-local>.png`, y **Copiar link**.
+  - Se verificó decodificando el PNG descargado: contiene exactamente el link público.
+
 ## Estado en vivo de una petición (gRPC en el backend)
 
 El navegador **no habla gRPC**: usa REST con el backend. Por dentro, el backend evalúa cada petición llamando al motor de IA por **gRPC con streaming** y reenvía cada etapa al navegador por **SSE**.
