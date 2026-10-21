@@ -501,7 +501,7 @@ function requestStatusView(requestId, track = null) {
     } else {
       children.push(el('h3', { text: 'El DJ preparará una transición' }), el('p', { text: event.result?.reason || event.message }));
       const steps = event.result?.bridgeSequence || [];
-      if (steps.length) children.push(el('ol', {}, ...steps.map((step) => el('li', { text: `${step.genre} a ${step.target_bpm} BPM` }))));
+      if (steps.length) children.push(el('ol', {}, ...steps.map((step) => el('li', { text: step.target_bpm ? `${step.genre} a ${step.target_bpm} BPM` : step.genre }))));
     }
     outcome.replaceChildren(...children);
   };
