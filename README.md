@@ -34,6 +34,16 @@ Mientras estén vacías, la app muestra "El inicio de sesión no está configura
 
 La configuración del panel de Supabase (SMTP de Gmail, plantillas con el código, límites) está en `SUPABASE_AUTH.md` del repositorio `smartdj-backend`.
 
+## Pedir canciones (bloque B)
+
+El link público del local (`/?venue=<código>`) muestra un **buscador**:
+
+- Al escribir 2 o más letras, después de 400 ms sin teclear, consulta `GET /api/public/venues/:code/search?q=`. El backend busca en iTunes; el navegador nunca llama a APIs externas.
+- Cada resultado muestra portada, título, artista, género y un botón para escuchar el **preview de 30 s**.
+- **Al tocar una canción se pide de inmediato** con `POST /api/public/venues/:code/requests` y `{ trackId, guestName? }`. El nombre es opcional y no hay campos de género, BPM ni tonalidad.
+- Después se muestra el estado en vivo por etapas.
+- Todo dato externo (nombre del local, canciones) se inserta con `textContent`.
+
 ## Estado en vivo de una petición (gRPC en el backend)
 
 El navegador **no habla gRPC**: usa REST con el backend. Por dentro, el backend evalúa cada petición llamando al motor de IA por **gRPC con streaming** y reenvía cada etapa al navegador por **SSE**.
