@@ -9,10 +9,19 @@ function getToken() { return localStorage.getItem('accessToken'); }
 function setToken(token) { if (token) localStorage.setItem('accessToken', token); }
 function clearToken() { localStorage.removeItem('accessToken'); }
 
+// Construye la URL del backend y verifica que no salga de API_BASE/api/ (evita desviar la petición
+// a otro origen con rutas como "//otro-host" o "../").
+function apiUrl(path) {
+  const base = new URL(`${API_BASE}/api/`);
+  const url = new URL(`${API_BASE}/api${path}`);
+  if (!String(path).startsWith('/') || url.origin !== base.origin || !url.pathname.startsWith(base.pathname)) throw new Error('Ruta de API inválida.');
+  return url.toString();
+}
+
 // Cliente fetch robusto: agrega el Bearer token automaticamente, valida res.ok
 // y NUNCA intenta parsear HTML como JSON.
 async function api(path, options = {}) {
-  const url = `${API_BASE}/api${path}`;
+  const url = apiUrl(path);
   const token = getToken();
   const headers = {
     'Content-Type': 'application/json',
