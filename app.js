@@ -392,10 +392,49 @@ function venueDetail(venue, { onEdited }) {
 }
 
 // Link público del local con botón para copiarlo (el QR se agrega en shareBox del bloque D).
+// Dibuja el QR del link en un canvas (qrcode-generator, cargado desde CDN con SRI). Devuelve null si no cargó.
+const QR_MODULE_PX = 8;
+const QR_MARGIN_MODULES = 4;
+function qrCanvas(text) {
+  if (typeof window.qrcode !== 'function') return null;
+  const qr = window.qrcode(0, 'M');
+  qr.addData(text);
+  qr.make();
+  const modules = qr.getModuleCount();
+  const size = (modules + QR_MARGIN_MODULES * 2) * QR_MODULE_PX;
+  const canvas = el('canvas', { class: 'qr', width: String(size), height: String(size), role: 'img', 'aria-label': `Código QR de ${text}` });
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, size, size);
+  ctx.fillStyle = '#000000';
+  for (let row = 0; row < modules; row++) {
+    for (let col = 0; col < modules; col++) {
+      if (qr.isDark(row, col)) ctx.fillRect((col + QR_MARGIN_MODULES) * QR_MODULE_PX, (row + QR_MARGIN_MODULES) * QR_MODULE_PX, QR_MODULE_PX, QR_MODULE_PX);
+    }
+  }
+  return canvas;
+}
+const fileSlug = (name) => name.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-|-$/g, '').toLowerCase() || 'local';
+
 function shareBox(venue) {
   const link = publicLink(venue);
   const status = el('small', { class: 'copy-status' });
+  const canvas = qrCanvas(link);
+  const qrArea = canvas
+    ? el('div', { class: 'qr-area' }, canvas, el('button', { type: 'button', class: 'switch', text: 'Descargar QR (PNG)', onclick: () => {
+      canvas.toBlob((blob) => {
+        if (!blob) { status.textContent = 'No se pudo generar el PNG.'; return; }
+        const url = URL.createObjectURL(blob);
+        const a = el('a', { href: url, download: `qr-${fileSlug(venue.name)}.png` });
+        document.body.append(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      }, 'image/png');
+    } }))
+    : el('p', { class: 'notice', text: 'No se pudo cargar el generador de QR. Recarga la página.' });
   return el('div', { class: 'share' },
+    qrArea,
     el('p', {}, 'Link público: ', el('a', { href: link, target: '_blank', rel: 'noopener', text: link })),
     el('button', { type: 'button', class: 'switch', text: 'Copiar link', onclick: async () => {
       try { await navigator.clipboard.writeText(link); status.textContent = 'Link copiado.'; } catch { status.textContent = 'No se pudo copiar; selecciónalo y cópialo a mano.'; }
