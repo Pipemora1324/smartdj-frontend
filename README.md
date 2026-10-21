@@ -66,6 +66,31 @@ Al iniciar sesión se abre una **vista de gestión** de página completa (`showD
   - Botón **Descargar QR (PNG)**, que guarda `qr-<nombre-del-local>.png`, y **Copiar link**.
   - Se verificó decodificando el PNG descargado: contiene exactamente el link público.
 
+## Consola de DJ y emisora automática
+
+En el panel, cada local tiene el botón **🎧 Consola de DJ** (`showConsole()` en `dj-console.js`). La música suena en el navegador del dueño: hay que abrir la consola en el equipo conectado al sonido del local.
+
+- **"Iniciar emisora":** los navegadores no reproducen audio sin un clic. Este botón crea el `AudioContext` y toma el control (`POST /player/claim`).
+- **Decks A y B:** portada, título, artista, crédito con enlace y licencia, tiempo transcurrido y restante, forma de onda (picos de Jamendo) y volumen por deck.
+- **EQ de 3 bandas (Web Audio):** graves (low-shelf de 250 Hz), medios (peaking de 1 kHz) y agudos (high-shelf de 4 kHz), de −24 a +6 dB, con botón **K** para cortar la banda.
+- **Mezclador:** crossfader de potencia constante, volumen maestro (se guarda en el servidor), reproducir/pausar y saltar.
+- **AutoDJ / Manual:**
+  - En AutoDJ, la siguiente pista se precarga en el deck libre y el crossfade empieza en el punto que sugiere el motor, con la duración que sugiere. La rampa corre en el hilo de audio, así que también funciona con la pestaña en segundo plano.
+  - En Manual no hay transiciones automáticas: el dueño mueve el crossfader. Si una pista termina, sigue la siguiente para que la emisora no se quede en silencio.
+- **Cola:** reordenable con ↑/↓ (también en móvil) o arrastrando en escritorio. Se pueden quitar pistas y agregar otras desde el buscador del catálogo (Jamendo).
+- **Si una pista falla:** un reintento, después el servidor de respaldo de Jamendo sin EQ (`audioFallbackUrl`) y, si tampoco carga, se salta. La siguiente pista se verifica mientras se precarga.
+- **Una sola consola por local:** si otro equipo toma el control, esta consola se pausa y muestra "Tomar control".
+- **"Solo licencias comerciales":** excluye las pistas con licencia no comercial (NC).
+
+La lógica sin DOM (curvas del crossfader, punto de transición, forma de onda y movimientos de la cola) está en `console-core.js`, con pruebas en `scripts/console-core.test.mjs`.
+
+**Página pública (`/?venue=`):**
+- "Sonando ahora" con portada, título, artista y crédito (enlace a la pista y licencia), más las próximas 5 pistas. Las pedidas por el público se marcan como "Pedida".
+- Se actualiza por SSE (`/api/public/venues/:code/events`), con polling cada 10 s si el SSE no está conectado.
+- **No reproduce audio:** el preview de 30 s pasó a las peticiones del panel del dueño.
+
+Las licencias de la música (uso no comercial de la API de Jamendo y qué cambia para un uso comercial) están explicadas en el README del backend.
+
 ## Calidad: SonarCloud (bloque F)
 
 El Quality Gate fallaba por **seguridad** (E) y **fiabilidad** (C). Lo que se corrigió:
