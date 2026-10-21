@@ -15,6 +15,12 @@ Frontend estático de SmartDJ (HTML, CSS y JavaScript nativo, sin build). Lo usa
 - **API:** usa `api(path)`, que pasa por `apiUrl()` y no sale de `API_BASE/api/`. Las llamadas `async` que no se esperan van con `void` y manejan su propio error.
 - **Librerías por CDN:** con versión fija y SRI (supabase-js en jsDelivr y qrcode-generator en cdnjs). Verifica el hash al cambiar de versión.
 - **Pruebas:** `node --test "scripts/*.test.mjs"`. Las pruebas de navegador usan una copia con un Supabase simulado y el backend local, nunca producción.
+- **Consola de DJ:**
+  - `dj-console.js` contiene la interfaz y el Web Audio (dos decks, EQ, crossfader y AutoDJ en el navegador); `console-core.js` tiene la lógica pura, con pruebas.
+  - Cada deck usa dos `<audio>`: uno pasa por Web Audio y necesita CORS; el otro es el respaldo sin CORS y no se conecta a Web Audio, porque sonaría en silencio.
+  - La rampa del crossfade se programa en los `AudioParam`, no con temporizadores.
+  - El `Dockerfile` debe copiar `console-core.js` y `dj-console.js`.
+- **Página pública:** sin audio. Se actualiza por SSE (`/public/venues/:code/events`), con polling de respaldo.
 
 ## Reglas fijas
 
