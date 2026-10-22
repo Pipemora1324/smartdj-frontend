@@ -156,7 +156,7 @@ function closeMobileMenu(returnFocus = true) {
 }
 burger.addEventListener('click', () => (mobileMenu.hidden ? openMobileMenu() : closeMobileMenu()));
 // Si la pantalla crece (por ejemplo al girar el teléfono), el menú móvil se cierra solo.
-window.matchMedia?.('(min-width: 768px)').addEventListener?.('change', (e) => { if (e.matches) closeMobileMenu(false); });
+window.matchMedia?.('(min-width: 900px)').addEventListener?.('change', (e) => { if (e.matches) closeMobileMenu(false); });
 
 function renderMobileMenu(model) {
   const action = (item, primary = false) => {
