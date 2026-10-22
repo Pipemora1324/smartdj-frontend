@@ -11,6 +11,7 @@ const SKIP_FADE_SECONDS = 3;
 const WAVE_BARS = 120;
 const REQUESTS_POLL_MS = 20000;
 const LIVE_THROTTLE_MS = 1500;
+const NOTICE_MS = 6000;
 let activeConsole = null;
 const STATUS_LABELS = { playing: 'Al aire', paused: 'En pausa', stopped: 'Apagada' };
 
@@ -49,6 +50,7 @@ function closeConsole() {
   clearInterval(c.uiTimer);
   clearInterval(c.requestsTimer);
   clearTimeout(c.liveTimer);
+  clearTimeout(c.noticeTimer);
   c.events?.close();
   clearTimeout(c.volumeTimer);
   for (const deck of c.decks || []) {
@@ -87,52 +89,111 @@ function showConsole(venue, { onBack } = {}) {
   activeConsole = c;
 
   // ---------- Interfaz ----------
+  // Avisos: se muestran y se borran solos (salvo los que deben quedar, como "emisora en otro dispositivo").
   const notice = el('p', { class: 'console-notice', role: 'status', 'aria-live': 'polite' });
-  const say = (text) => { notice.textContent = text || ''; };
+  const say = (text, { sticky = false } = {}) => {
+    clearTimeout(c.noticeTimer);
+    notice.textContent = text || '';
+    if (text && !sticky) c.noticeTimer = setTimeout(() => { notice.textContent = ''; }, NOTICE_MS);
+  };
   const statusPill = el('span', { class: 'on-air', text: 'Apagada' });
   const modeButtons = { autodj: el('button', { type: 'button', class: 'mode', 'aria-pressed': 'true', text: 'AutoDJ' }), manual: el('button', { type: 'button', class: 'mode', 'aria-pressed': 'false', text: 'Manual' }) };
   const ncToggle = el('input', { type: 'checkbox', id: 'ncToggle' });
   ncToggle.checked = Boolean(venue.exclude_non_commercial);
   const crossfader = el('input', { type: 'range', min: '0', max: '100', value: '0', class: 'crossfader', 'aria-label': 'Crossfader (A ↔ B)' });
-  const masterVolume = el('input', { type: 'range', min: '0', max: '100', value: '80', 'aria-label': 'Volumen maestro' });
-  const playButton = el('button', { type: 'button', class: 'big', text: '▶ Reproducir', disabled: '' });
-  const skipButton = el('button', { type: 'button', class: 'big ghost-dark', text: '⏭ Saltar', disabled: '' });
+  const masterVolume = el('input', { type: 'range', min: '0', max: '100', value: '80', id: 'masterVolume' });
+  const playButton = el('button', { type: 'button', class: 'big-play', 'aria-label': 'Reproducir', text: '▶', disabled: '' });
+  const skipButton = el('button', { type: 'button', class: 'big-skip', 'aria-label': 'Saltar a la siguiente', text: '⏭', disabled: '' });
   const queueList = el('ol', { class: 'console-queue' });
   const queueHint = el('p', { class: 'notice-dark' });
   const requestsList = el('ul', { class: 'console-requests' });
   const requestsHint = el('p', { class: 'notice-dark', text: 'Cargando peticiones…' });
+  const requestsCount = el('span', { class: 'tab-count', hidden: '' });
   const startOverlay = el('div', { class: 'console-start' });
   const lostOverlay = el('div', { class: 'console-start', hidden: '' });
 
+  // Cada deck tiene una vista principal (vinilo, título y crédito) y controles avanzados (EQ, volumen, forma de onda).
   const deckView = (name) => {
     const view = {
-      cover: el('div', { class: 'deck-cover cover-empty', text: '♪' }),
+      cover: el('div', { class: 'vinyl-label cover-empty', text: '♪' }),
+      disc: el('div', { class: 'vinyl', 'aria-hidden': 'true' }),
       badge: el('span', { class: 'deck-badge', text: 'VACÍO' }),
       title: el('strong', { class: 'deck-title', text: 'Sin pista' }),
       artist: el('span', { class: 'deck-artist' }),
       credit: el('small', { class: 'credit' }),
       time: el('span', { class: 'deck-time', text: '0:00 / 0:00' }),
+      progress: el('span', { class: 'deck-progress-bar' }),
       wave: el('canvas', { class: 'wave-canvas', height: '56', role: 'img', 'aria-label': `Forma de onda del deck ${name}` }),
       warning: el('small', { class: 'deck-warning' }),
       play: el('button', { type: 'button', class: 'deck-play', text: '▶', 'aria-label': `Reproducir o pausar el deck ${name}` }),
-      volume: el('input', { type: 'range', min: '0', max: '100', value: '100', 'aria-label': `Volumen del deck ${name}` }),
+      volume: el('input', { type: 'range', min: '0', max: '100', value: '100', id: `deckVolume${name}` }),
       eq: {},
     };
+    view.disc.append(view.cover);
     const eqRow = (band, label) => {
-      const input = el('input', { type: 'range', min: String(DJ.EQ_MIN_DB), max: String(DJ.EQ_MAX_DB), step: '1', value: '0', 'aria-label': `${label} del deck ${name}` });
+      const id = `eq${name}${band}`;
+      const input = el('input', { type: 'range', min: String(DJ.EQ_MIN_DB), max: String(DJ.EQ_MAX_DB), step: '1', value: '0', id });
       const kill = el('button', { type: 'button', class: 'kill', 'aria-pressed': 'false', text: 'K', 'aria-label': `Cortar ${label.toLowerCase()} del deck ${name}` });
       view.eq[band] = { input, kill };
-      return el('label', { class: 'eq-row' }, el('span', { text: label }), input, kill);
+      return el('div', { class: 'eq-row' }, el('label', { for: id, text: label }), input, kill);
     };
-    view.root = el('section', { class: `deck-panel deck-${name.toLowerCase()}`, 'aria-label': `Deck ${name}` },
-      el('div', { class: 'deck-top' }, view.cover, el('div', { class: 'deck-meta' }, el('div', { class: 'deck-label' }, el('b', { text: `DECK ${name}` }), view.badge), view.title, view.artist, view.credit)),
+    view.root = el('section', { class: `deck-card deck-${name.toLowerCase()}`, 'aria-label': `Deck ${name}` },
+      view.disc,
+      el('div', { class: 'deck-meta' },
+        el('div', { class: 'deck-label' }, el('b', { text: `DECK ${name}` }), view.badge),
+        view.title, view.artist,
+        el('div', { class: 'deck-progress' }, view.progress),
+        view.time, view.credit, view.warning));
+    view.advanced = el('section', { class: 'deck-advanced', 'aria-label': `Controles avanzados del deck ${name}` },
+      el('h3', { text: `Deck ${name}` }),
       view.wave,
-      el('div', { class: 'deck-controls' }, view.play, view.time, el('label', { class: 'deck-volume' }, el('span', { text: 'Vol' }), view.volume)),
-      el('div', { class: 'deck-eq' }, eqRow('high', 'Agudos'), eqRow('mid', 'Medios'), eqRow('low', 'Graves')),
-      view.warning);
+      el('div', { class: 'deck-controls' }, view.play, el('label', { class: 'deck-volume', for: `deckVolume${name}`, text: 'Volumen' }), view.volume),
+      el('div', { class: 'deck-eq' }, eqRow('high', 'Agudos'), eqRow('mid', 'Medios'), eqRow('low', 'Graves')));
     return view;
   };
   const views = [deckView('A'), deckView('B')];
+
+  // "Avanzado": EQ, crossfader y controles por deck, cerrado por defecto.
+  const advancedPanel = el('div', { class: 'advanced-panel', id: 'advancedPanel', hidden: '' },
+    views[0].advanced,
+    el('section', { class: 'xfade-panel', 'aria-label': 'Crossfader' }, el('h3', { text: 'Crossfader' }), el('div', { class: 'xfade' }, el('span', { text: 'A' }), crossfader, el('span', { text: 'B' }))),
+    views[1].advanced);
+  const advancedButton = el('button', { type: 'button', class: 'advanced-toggle', 'aria-expanded': 'false', 'aria-controls': 'advancedPanel', text: 'Avanzado ▾' });
+  advancedButton.addEventListener('click', () => {
+    const open = advancedPanel.hidden;
+    advancedPanel.hidden = !open;
+    advancedButton.setAttribute('aria-expanded', String(open));
+    advancedButton.textContent = open ? 'Avanzado ▴' : 'Avanzado ▾';
+    if (open) c.decks?.forEach(drawDeck);
+  });
+
+  // Pestañas accesibles: flechas, Inicio y Fin cambian de pestaña.
+  const tabs = [
+    ['queue', 'Cola', el('section', { class: 'queue-panel' }, el('h2', { class: 'sr-only', text: 'Cola' }), queueHint, queueList)],
+    ['requests', 'Peticiones', el('section', { class: 'requests-panel' }, el('h2', { class: 'sr-only', text: 'Peticiones' }), requestsHint, requestsList)],
+    ['search', 'Buscar', catalogPanel()],
+  ].map(([key, label, content]) => ({
+    key,
+    tab: el('button', { type: 'button', role: 'tab', id: `tab-${key}`, 'aria-controls': `panel-${key}`, 'aria-selected': 'false', tabindex: '-1' }, label, key === 'requests' ? requestsCount : ''),
+    panel: el('div', { role: 'tabpanel', id: `panel-${key}`, 'aria-labelledby': `tab-${key}`, class: 'tab-panel', hidden: '' }, content),
+  }));
+  const selectTab = (key, focus = false) => tabs.forEach((t) => {
+    const selected = t.key === key;
+    t.tab.setAttribute('aria-selected', String(selected));
+    t.tab.tabIndex = selected ? 0 : -1;
+    t.panel.hidden = !selected;
+    if (selected && focus) t.tab.focus();
+  });
+  tabs.forEach((t, index) => {
+    t.tab.addEventListener('click', () => selectTab(t.key));
+    t.tab.addEventListener('keydown', (e) => {
+      const keys = { ArrowRight: index + 1, ArrowLeft: index - 1, Home: 0, End: tabs.length - 1 };
+      if (!(e.key in keys)) return;
+      e.preventDefault();
+      selectTab(tabs[(keys[e.key] + tabs.length) % tabs.length].key, true);
+    });
+  });
+  selectTab('queue');
 
   const back = () => { closeConsole(); onBack?.(); };
   showView(el('div', { class: 'dj-console' },
@@ -140,22 +201,20 @@ function showConsole(venue, { onBack } = {}) {
       el('button', { type: 'button', class: 'ghost-dark', text: '← Volver al panel', onclick: back }),
       el('h1', {}, 'Consola · ', el('span', { text: venue.name })),
       statusPill,
-      el('div', { class: 'mode-switch', role: 'group', 'aria-label': 'Modo de la emisora' }, modeButtons.autodj, modeButtons.manual),
       el('label', { class: 'nc-toggle', for: 'ncToggle' }, ncToggle, ' Solo licencias comerciales')),
     notice,
     el('div', { class: 'console-stage' },
       startOverlay, lostOverlay,
-      el('div', { class: 'decks' },
-        views[0].root,
-        el('section', { class: 'mixer-panel', 'aria-label': 'Mezclador' },
-          el('label', { class: 'master' }, el('span', { text: 'Maestro' }), masterVolume),
-          playButton, skipButton,
-          el('div', { class: 'xfade' }, el('span', { text: 'A' }), crossfader, el('span', { text: 'B' }))),
-        views[1].root)),
-    el('div', { class: 'console-lower' },
-      el('section', { class: 'queue-panel' }, el('h2', { text: 'Cola' }), queueHint, queueList),
-      el('section', { class: 'requests-panel' }, el('h2', { text: 'Peticiones' }), requestsHint, requestsList),
-      catalogPanel())));
+      el('div', { class: 'decks' }, views[0].root, views[1].root),
+      el('div', { class: 'main-controls' },
+        playButton, skipButton,
+        el('div', { class: 'master' }, el('label', { for: 'masterVolume', text: 'Volumen' }), masterVolume),
+        el('div', { class: 'mode-switch', role: 'group', 'aria-label': 'Modo de la emisora' }, modeButtons.autodj, modeButtons.manual),
+        advancedButton),
+      advancedPanel),
+    el('div', { class: 'console-tabs' },
+      el('div', { role: 'tablist', 'aria-label': 'Cola, peticiones y búsqueda', class: 'tablist' }, ...tabs.map((t) => t.tab)),
+      ...tabs.map((t) => t.panel))));
 
   // ---------- Servidor ----------
   const call = async (method, path, body) => {
@@ -372,9 +431,11 @@ function showConsole(venue, { onBack } = {}) {
     view.credit.replaceWith(credit);
     view.credit = credit;
     const art = item?.track?.artworkUrl && safeLink(item.track.artworkUrl);
-    const cover = art ? el('img', { class: 'deck-cover', src: art, alt: '', width: '96', height: '96' }) : el('div', { class: 'deck-cover cover-empty', text: '♪' });
+    const cover = art ? el('img', { class: 'vinyl-label', src: art, alt: '', width: '96', height: '96' }) : el('div', { class: 'vinyl-label cover-empty', text: '♪' });
     view.cover.replaceWith(cover);
     view.cover = cover;
+    // El vinilo gira solo mientras su pista suena.
+    view.disc.classList.toggle('spinning', Boolean(item) && !deck.audio().paused);
     view.play.textContent = deck.audio().paused ? '▶' : '❚❚';
     view.play.disabled = !item || c.snapshot?.mode !== 'manual';
     drawDeck(deck);
@@ -396,6 +457,7 @@ function showConsole(venue, { onBack } = {}) {
     const bars = DJ.waveformBars(deck.item?.track?.waveform, WAVE_BARS);
     const step = width / bars.length;
     const progress = duration ? now / duration : 0;
+    deck.view.progress.style.width = `${Math.min(100, progress * 100)}%`;
     bars.forEach((v, i) => {
       g.fillStyle = i / bars.length < progress ? '#c6ff00' : '#3b3b36';
       const h = Math.max(2, v * height);
@@ -474,12 +536,13 @@ function showConsole(venue, { onBack } = {}) {
       if (latest.length < 2) { list.replaceChildren(); hint.textContent = 'Escribe al menos 2 letras.'; return; }
       timer = setTimeout(() => { void search(latest); }, CATALOG_DEBOUNCE_MS);
     });
-    return el('section', { class: 'catalog-panel' }, el('h2', { text: 'Catálogo' }), input, hint, list);
+    return el('section', { class: 'catalog-panel' }, el('h2', { class: 'sr-only', text: 'Buscar en el catálogo' }), input, hint, list);
   }
 
   const setPlaying = (value) => {
     c.playing = value;
-    playButton.textContent = value ? '❚❚ Pausar' : '▶ Reproducir';
+    playButton.textContent = value ? '❚❚' : '▶';
+    playButton.setAttribute('aria-label', value ? 'Pausar' : 'Reproducir');
     renderDecks();
   };
 
@@ -554,6 +617,9 @@ function showConsole(venue, { onBack } = {}) {
   };
   function renderRequests(requests) {
     requestsHint.textContent = requests.length ? '' : 'No hay peticiones pendientes. Los clientes piden desde el link o el QR del local.';
+    const waiting = requests.filter((r) => r.state !== 'in_queue' && r.state !== 'playing').length;
+    requestsCount.textContent = String(waiting);
+    requestsCount.hidden = !waiting;
     requestsList.replaceChildren(...requests.map((r) => {
       const art = r.artworkUrl && safeLink(r.artworkUrl);
       const busy = r.state === 'in_queue' || r.state === 'playing';
