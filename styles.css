@@ -220,7 +220,7 @@ input[type='checkbox'] { min-height: auto; width: 1.2em; height: 1.2em; accent-c
 /* ==========================================================================
    Header (estructura base; el header con sesión lo arma ui.js)
    ========================================================================== */
-header { min-height: var(--header-h); padding: 0 var(--gutter); display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); border-bottom: 1px solid var(--border); }
+.site-header { min-height: var(--header-h); padding: 0 var(--gutter); display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); border-bottom: 1px solid var(--border); }
 .brand { font-weight: 800; font-size: 1.375rem; letter-spacing: -1px; text-decoration: none; color: var(--text); }
 .brand span { color: var(--accent-text); }
 .actions a { color: var(--text); text-decoration: none; }
@@ -237,7 +237,7 @@ header { min-height: var(--header-h); padding: 0 var(--gutter); display: flex; a
 .actions a { font-weight: 600; border-bottom: 1px solid; }
 .metrics { display: flex; flex-wrap: wrap; gap: var(--space-6); margin-top: var(--space-10); font-size: var(--text-xs); color: var(--text-muted); }
 .metrics b { display: block; color: var(--text); font-size: var(--text-md); }
-.deck { width: 100%; max-width: 440px; margin: 0 auto; background: var(--ink-800); color: var(--ink-50); padding: var(--space-5); border: 8px solid var(--ink-600); box-shadow: var(--shadow-offset); transform: rotate(2deg); font-family: var(--font-mono); font-size: 10px; }
+.deck { width: 100%; max-width: 440px; margin: 0 auto; background: var(--ink-800); color: var(--ink-50); padding: var(--space-5); border: 8px solid var(--ink-600); box-shadow: var(--shadow-offset); font-family: var(--font-mono); font-size: 10px; }
 .deck-head { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--ink-500); padding-bottom: var(--space-3); }
 .deck-head i { width: 8px; height: 8px; background: var(--lime-400); border-radius: 50%; box-shadow: 0 0 12px var(--lime-400); }
 .platters { display: grid; grid-template-columns: 1fr 55px 1fr; align-items: center; gap: var(--space-3); padding: var(--space-6) var(--space-1); }
@@ -293,6 +293,7 @@ dialog::backdrop { background: var(--overlay); }
 .auth form { display: grid; gap: var(--space-3); margin-top: var(--space-5); }
 .auth input, .auth select, .auth textarea { width: 100%; }
 .auth textarea { resize: vertical; }
+.notice:empty { display: none; }
 .error, .notice { font-size: var(--text-sm); padding: var(--space-2) var(--space-3); border-radius: var(--radius-sm); }
 .auth .error, .panel .error { color: var(--danger); background: var(--danger-soft); border: 1px solid currentColor; }
 .auth .error:empty, .panel .error:empty { display: none; }
@@ -619,6 +620,99 @@ button.is-loading::before { content: ''; display: inline-block; width: 1em; heig
 /* Mensajes de error y éxito: entran con un desplazamiento suave */
 .error:not(:empty), .notice, .field-error[style*='block'] { animation: message-in var(--dur) var(--ease-out); }
 @keyframes message-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+
+
+/* ==========================================================================
+   Panel del dueño: tarjetas de locales, QR destacado, esqueletos y estados vacíos
+   ========================================================================== */
+.venue-list h3 { margin: 0 0 var(--space-3); font: 500 var(--text-xs) var(--font-mono); letter-spacing: var(--tracking-mono); text-transform: uppercase; color: var(--text-muted); }
+.venue-item { display: grid; gap: 2px; padding: var(--space-3) var(--space-4); transition: transform var(--dur) var(--ease-out), box-shadow var(--dur) var(--ease), border-color var(--dur-fast) var(--ease); }
+.venue-item strong { font-size: var(--text-md); }
+.venue-item small { color: var(--text-muted); font-weight: 400; }
+.venue-item:hover:not(:disabled) { transform: translateY(-2px); box-shadow: var(--shadow-md); }
+.venue-item.selected small { color: var(--on-accent-soft); }
+.new-venue { width: 100%; }
+.panel-main { min-width: 0; }
+.muted { color: var(--text-muted); }
+.share { display: grid; gap: var(--space-3); padding: var(--space-5); border: 1px solid var(--border); border-style: solid; background: linear-gradient(135deg, var(--accent-soft), transparent 55%), var(--surface); box-shadow: var(--shadow-sm); }
+.share-head h3 { margin: 0; font-size: var(--text-lg); }
+.share .switch { justify-self: start; }
+.share-head p { margin: var(--space-1) 0 0; color: var(--text-muted); }
+.qr { transition: transform var(--dur) var(--ease-out), box-shadow var(--dur) var(--ease); box-shadow: var(--shadow-md); }
+.qr:hover { transform: scale(1.03) rotate(-1deg); }
+.empty-state { display: grid; justify-items: start; gap: var(--space-1); padding: var(--space-5); border: 1px dashed var(--border-strong); border-radius: var(--radius-lg); background: var(--surface); margin-bottom: var(--space-3); }
+.empty-state p { margin: 0; color: var(--text-muted); font-size: var(--text-sm); }
+.empty-icon { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; color: var(--on-accent); background: var(--accent); font-size: 1.3rem; animation: float 3s var(--ease) infinite alternate; }
+.skeleton { display: block; border-radius: var(--radius-md); background: var(--surface-2); position: relative; overflow: hidden; }
+.skeleton::after { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, var(--vinyl-shine), transparent); transform: translateX(-100%); animation: shimmer 1.3s infinite; }
+.sk-title { height: 14px; width: 40%; margin-bottom: var(--space-3); }
+.sk-card { height: 58px; margin-bottom: var(--space-2); }
+.sk-button { height: 44px; }
+.sk-heading { height: 28px; width: 55%; margin-bottom: var(--space-3); }
+.sk-line { height: 14px; margin-bottom: var(--space-2); }
+.sk-line.short { width: 60%; }
+.sk-block { height: 180px; margin-top: var(--space-4); border-radius: var(--radius-lg); }
+
+/* ==========================================================================
+   Consola: vinilos con brillo y halo, progreso animado, visualizador y pulso del botón principal
+   ========================================================================== */
+.vinyl-wrap { position: relative; border-radius: 50%; }
+.vinyl-wrap::before { content: ''; position: absolute; inset: -14px; border-radius: 50%; background: radial-gradient(circle, var(--vinyl-glow), transparent 68%); opacity: 0; transform: scale(0.85); transition: opacity var(--dur-slow) var(--ease), transform var(--dur-slow) var(--ease-out); pointer-events: none; }
+.vinyl-wrap::after { content: ''; position: absolute; inset: 6px; border-radius: 50%; background: linear-gradient(135deg, var(--vinyl-shine) 0%, transparent 32%, transparent 62%, var(--vinyl-shine) 100%); pointer-events: none; }
+.vinyl-wrap.spinning::before { opacity: 1; transform: scale(1); }
+.vinyl { position: relative; animation-duration: 3.2s; animation-timing-function: linear; }
+.deck-progress-bar { width: 100%; transform: scaleX(0); transform-origin: left; transition: transform var(--dur) linear; }
+.level-meter { display: flex; align-items: flex-end; gap: 3px; height: 44px; padding: 0 var(--space-2); }
+.level-meter span { width: 5px; height: 100%; border-radius: var(--radius-pill); background: var(--accent-text); transform: scaleY(0.08); transform-origin: bottom; transition: transform 90ms linear; }
+.level-meter.simulated.active span { animation: wave 0.7s var(--ease) infinite alternate; transform: scaleY(0.9); }
+.level-meter.simulated.active span:nth-child(3n) { animation-delay: 0.15s; }
+.level-meter.simulated.active span:nth-child(4n) { animation-delay: 0.3s; }
+.dj-console .big-play { position: relative; }
+.dj-console .big-play::after { content: ''; position: absolute; inset: -6px; border-radius: 50%; border: 2px solid var(--accent); opacity: 0; pointer-events: none; }
+.main-controls.is-playing .big-play::after { animation: pulse-ring 1.8s var(--ease-out) infinite; }
+.dj-console .mode, .dj-console [role='tab'], .queue-actions button, .request-actions button { transition: transform var(--dur-fast) var(--ease), background-color var(--dur-fast) var(--ease); }
+.queue-item, .request-item, .catalog-results li { transition: transform var(--dur) var(--ease-out), border-color var(--dur-fast) var(--ease); }
+.queue-item:hover, .request-item:hover { transform: translateX(2px); border-color: var(--border-strong); }
+.tab-panel:not([hidden]) { animation: view-in var(--dur) var(--ease-out); }
+.advanced-panel:not([hidden]) { animation: view-in var(--dur) var(--ease-out); }
+
+/* ==========================================================================
+   Página pública: portada animada, barras en vivo, cola y resultados con transición
+   ========================================================================== */
+.now-area.is-live .cover { animation: float 4s var(--ease) infinite alternate; box-shadow: 0 18px 40px rgb(0 0 0 / 35%); }
+.live-bars { display: none; align-items: flex-end; gap: 2px; height: 12px; margin-right: var(--space-2); vertical-align: -1px; }
+.now-area.is-live .live-bars { display: inline-flex; }
+.live-bars i { width: 3px; height: 100%; background: var(--lime-400); transform-origin: bottom; animation: wave 0.6s var(--ease) infinite alternate; }
+.live-bars i:nth-child(2) { animation-delay: 0.2s; }
+.live-bars i:nth-child(3) { animation-delay: 0.35s; }
+.live-bars i:nth-child(4) { animation-delay: 0.1s; }
+.entering { animation: list-in var(--dur-slow) var(--ease-out) both; }
+.leaving { animation: list-out 260ms var(--ease) both; pointer-events: none; }
+.results .appear { animation: list-in var(--dur) var(--ease-out) both; animation-delay: calc(var(--i, 0) * 40ms); }
+.auth .track { transition: transform var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease); }
+.auth .track:hover:not(:disabled) { transform: translateY(-1px); box-shadow: var(--shadow-sm); }
+
+/* ==========================================================================
+   Landing: aparecer al hacer scroll, parallax del deck y tarjetas con microinteracción
+   ========================================================================== */
+.hero .deck { transform: translateY(var(--parallax, 0)) rotate(2deg); will-change: transform; }
+.motion-ok .scroll-reveal { opacity: 0; transform: translateY(24px); transition: opacity var(--dur-slow) var(--ease-out) var(--reveal-delay, 0ms), transform var(--dur-slow) var(--ease-out) var(--reveal-delay, 0ms); }
+.motion-ok .scroll-reveal.is-visible { opacity: 1; transform: none; }
+.steps article { transition: transform var(--dur) var(--ease-out); }
+.steps article:hover { transform: translateY(-4px); }
+.role-grid article { transition: transform var(--dur) var(--ease-out), border-color var(--dur) var(--ease); }
+.role-grid article:hover { transform: translateX(4px); border-color: var(--lime-400); }
+
+/* Transición entre vistas (portada, panel, consola, página pública): solo opacidad y transform */
+.app-view > * { animation: view-in var(--dur-slow) var(--ease-out); }
+main#inicio { animation: view-in var(--dur-slow) var(--ease-out); }
+
+@keyframes view-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@keyframes list-in { from { opacity: 0; transform: translateY(8px) scale(0.98); } to { opacity: 1; transform: none; } }
+@keyframes list-out { to { opacity: 0; transform: translateX(-12px) scale(0.98); } }
+@keyframes float { from { transform: translateY(0); } to { transform: translateY(-6px); } }
+@keyframes shimmer { to { transform: translateX(100%); } }
+@keyframes pulse-ring { 0% { opacity: 0.7; transform: scale(1); } 100% { opacity: 0; transform: scale(1.35); } }
 
 /* ==========================================================================
    Botón de tema: sol en modo oscuro, luna en modo claro; el cambio gira el ícono (transform y opacidad).
