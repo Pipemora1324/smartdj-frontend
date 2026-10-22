@@ -338,6 +338,11 @@ function showConsole(venue, { onBack } = {}) {
       return;
     }
     say(`"${deck.item.track.title}" no se pudo reproducir (${why}) y se saltó.`);
+    // Si falla la pista que está entrando en un crossfade, se salta cuando termine la transición.
+    if (c.transitioning && deck !== activeDeck() && !deck.item.queueId) {
+      c.failedIncoming = true;
+      return;
+    }
     if (deck === activeDeck()) {
       await transition({ fade: 0, reason: 'error' });
     } else {
@@ -383,6 +388,11 @@ function showConsole(venue, { onBack } = {}) {
       c.active = 1 - c.active;
       c.transitioning = false;
       renderDecks();
+      if (c.failedIncoming) {
+        c.failedIncoming = false;
+        void transition({ fade: 0, reason: 'error' });
+        return;
+      }
       preloadNext();
     }, (incoming.item ? seconds : 0) * 1000 + 50);
   };
