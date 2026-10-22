@@ -575,6 +575,12 @@ function previewButton(track) {
   return btn;
 }
 
+// Etiqueta del origen de una pista: "Completa" (suena entera) o "Preview 30 s" (corte de iTunes).
+function kindBadge(track) {
+  if (!track?.kindLabel) return null;
+  return el('span', { class: `kind kind-${track.kind}`, text: track.kindLabel });
+}
+
 // Buscador con resultados; onPick(track) se llama al tocar una canción.
 function songSearch(code, onPick) {
   const input = el('input', { type: 'search', name: 'q', placeholder: 'Busca una canción o un artista', autocomplete: 'off', maxlength: '100', 'aria-label': 'Buscar canción' });
@@ -588,7 +594,8 @@ function songSearch(code, onPick) {
     list.replaceChildren(...tracks.map((track) => {
       const pick = el('button', { type: 'button', class: 'track', 'aria-label': `Pedir ${track.title} de ${track.artist}` },
         trackCover(track),
-        el('span', { class: 'track-info' }, el('strong', { text: track.title }), el('small', { text: `${track.artist} · ${track.genre}` })));
+        el('span', { class: 'track-info' }, el('strong', { text: track.title }), el('small', { text: track.genre ? `${track.artist} · ${track.genre}` : track.artist })),
+        kindBadge(track));
       pick.addEventListener('click', () => { void onPick(track, list); });
       return el('li', {}, pick);
     }));
@@ -623,7 +630,9 @@ function songRequestView(venue, code, { onRequested } = {}) {
     list.querySelectorAll('button').forEach((b) => { b.disabled = true; });
     setError(formError, '');
     try {
-      const created = await api(`/public/venues/${encodeURIComponent(code)}/requests`, { method: 'POST', body: JSON.stringify({ trackId: track.trackId, ...(guestName ? { guestName } : {}) }) });
+      // Pista completa (Jamendo) por proveedor e id; preview de iTunes por trackId.
+      const song = track.kind === 'full' ? { provider: track.provider, externalId: track.externalId } : { trackId: track.trackId };
+      const created = await api(`/public/venues/${encodeURIComponent(code)}/requests`, { method: 'POST', body: JSON.stringify({ ...song, ...(guestName ? { guestName } : {}) }) });
       stopPreview();
       requestStatusView(created.id, track);
       if (!dialog.open) dialog.showModal();
@@ -660,6 +669,7 @@ function nowPlayingCard(song) {
       el('small', { class: 'eyebrow', text: 'Sonando ahora' }),
       el('strong', { text: song.title }),
       el('span', { text: song.genre ? `${song.artist} · ${song.genre}` : song.artist }),
+      song.kind === 'preview' ? kindBadge(song) : null,
       song.credit ? creditLine(song) : null));
 }
 
@@ -675,6 +685,7 @@ function venuePage(venue, code) {
       queueHint.textContent = data.queue.length ? '' : emptyQueue;
       queueList.replaceChildren(...data.queue.map((song) => el('li', {}, trackCover({ ...song, trackId: song.id }, 40),
         el('span', { class: 'track-info' }, el('strong', { text: song.title }), el('small', { text: song.artist })),
+        song.kind === 'preview' ? kindBadge(song) : null,
         song.source === 'request' ? el('span', { class: 'requested', text: 'Pedida' }) : null)));
     } catch (err) { queueHint.textContent = err.message; }
   };
