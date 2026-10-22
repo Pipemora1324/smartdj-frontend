@@ -227,3 +227,114 @@ document.querySelector('.skip-link')?.addEventListener('click', (e) => {
   target.setAttribute('tabindex', '-1');
   target.focus();
 });
+
+// ---------- Formularios de autenticación ----------
+const eyeIcon = () => svgIcon('icon icon-eye', [['path', { d: 'M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z' }], ['circle', { cx: '12', cy: '12', r: '3' }]]);
+const eyeOffIcon = () => svgIcon('icon icon-eye-off', [['path', { d: 'M3 3l18 18' }], ['path', { d: 'M10.6 5.1A10.4 10.4 0 0 1 12 5c6.4 0 10 7 10 7a17.6 17.6 0 0 1-3.2 4.2M6.6 6.6C3.7 8.4 2 12 2 12s3.6 7 10 7a9.7 9.7 0 0 0 5.4-1.6' }], ['path', { d: 'M9.9 9.9a3 3 0 0 0 4.2 4.2' }]]);
+let fieldCounter = 0;
+
+// Campo con etiqueta visible y mensaje de error asociado (aria-describedby).
+function labeledField(name, label, attrs = {}) {
+  fieldCounter += 1;
+  const id = `field-${name}-${fieldCounter}`;
+  const error = el('p', { class: 'field-error', id: `${id}-error`, 'data-error-for': name });
+  const input = el('input', { id, name, 'aria-describedby': `${id}-error`, ...attrs });
+  return { input, error, field: el('div', { class: 'field' }, el('label', { for: id, text: label }), input, error) };
+}
+
+// Contraseña con botón de mostrar/ocultar (ojo): cambia el tipo del campo, aria-pressed y la etiqueta.
+function passwordField(name, label, attrs = {}) {
+  const { input, error, field } = labeledField(name, label, { type: 'password', ...attrs });
+  const toggle = el('button', { type: 'button', class: 'reveal', 'aria-controls': input.id, 'aria-pressed': 'false', 'aria-label': 'Mostrar contraseña' }, eyeIcon(), eyeOffIcon());
+  toggle.addEventListener('click', () => {
+    const state = UI.revealState(input.type === 'password');
+    input.type = state.type;
+    toggle.setAttribute('aria-pressed', state.pressed);
+    toggle.setAttribute('aria-label', state.label);
+    input.focus();
+  });
+  const wrap = el('div', { class: 'password-wrap' });
+  input.replaceWith(wrap);
+  wrap.append(input, toggle);
+  return { input, error, field, toggle };
+}
+
+// Indicador de fortaleza y requisitos, actualizados mientras se escribe.
+function strengthMeter(input) {
+  const label = el('p', { class: 'strength-label', 'aria-live': 'polite' });
+  const checks = el('ul', { class: 'password-checks', 'aria-label': 'Requisitos de la contraseña' });
+  const root = el('div', { class: 'strength', 'data-score': '0' },
+    el('div', { class: 'strength-bar', 'aria-hidden': 'true' }, el('span'), el('span'), el('span'), el('span')), label, checks);
+  const update = () => {
+    const strength = UI.passwordStrength(input.value);
+    root.dataset.score = String(strength.score);
+    label.textContent = strength.label ? `Fortaleza: ${strength.label}` : '';
+    checks.replaceChildren(...strength.checks.map((c) => el('li', { class: c.ok ? 'ok' : '' },
+      el('span', { class: 'check-mark', 'aria-hidden': 'true', text: c.ok ? '✓' : '•' }),
+      `${c.label}${c.required ? '' : ' (recomendado)'}`, el('span', { class: 'sr-only', text: c.ok ? ': cumplido' : ': pendiente' }))));
+  };
+  input.addEventListener('input', update);
+  update();
+  return root;
+}
+
+// Error de un campo: texto y aria-invalid.
+function setFieldState(input, errorEl, message) {
+  setError(errorEl, message);
+  input.setAttribute('aria-invalid', message ? 'true' : 'false');
+}
+// Valida al salir del campo y, desde entonces, mientras se escribe.
+function liveValidate(input, errorEl, validate) {
+  let touched = false;
+  input.addEventListener('blur', () => { touched = true; setFieldState(input, errorEl, validate()); });
+  input.addEventListener('input', () => { if (touched) setFieldState(input, errorEl, validate()); });
+  return () => { touched = true; const message = validate(); setFieldState(input, errorEl, message); return message; };
+}
+
+// Estado de carga de un botón mientras dura la acción.
+async function withLoading(button, loadingText, task) {
+  const text = button.textContent;
+  button.disabled = true;
+  button.setAttribute('aria-busy', 'true');
+  button.classList.add('is-loading');
+  button.textContent = loadingText;
+  try {
+    return await task();
+  } finally {
+    button.disabled = false;
+    button.removeAttribute('aria-busy');
+    button.classList.remove('is-loading');
+    button.textContent = text;
+  }
+}
+
+// Código de 6 dígitos en casillas: teclado numérico en móvil, autofoco, pegado repartido y retroceso.
+// El grupo se usa como un campo: .value, .disabled y .focus(). onComplete se llama al llenar las 6 casillas.
+function otpInput(onComplete) {
+  const boxes = Array.from({ length: UI.CODE_LENGTH }, (_, i) => el('input', {
+    type: 'text', inputmode: 'numeric', pattern: '[0-9]*', maxlength: String(i === 0 ? UI.CODE_LENGTH : 1), class: 'otp-box',
+    autocomplete: i === 0 ? 'one-time-code' : 'off', 'aria-label': `Dígito ${i + 1} de ${UI.CODE_LENGTH}`,
+  }));
+  const group = el('div', { class: 'otp', role: 'group', 'aria-label': 'Código de 6 dígitos' }, ...boxes);
+  const digits = () => boxes.map((b) => b.value);
+  const apply = (index, text) => {
+    const result = UI.distributeCode(digits(), index, text);
+    result.digits.forEach((d, i) => { boxes[i].value = d; });
+    boxes[result.focusIndex].focus();
+    if (result.complete && UI.onlyDigits(text)) onComplete?.();
+  };
+  boxes.forEach((box, i) => {
+    box.addEventListener('input', () => { const text = box.value; box.value = ''; apply(i, text); });
+    box.addEventListener('paste', (e) => { e.preventDefault(); apply(i, e.clipboardData?.getData('text') || ''); });
+    box.addEventListener('focus', () => box.select());
+    box.addEventListener('keydown', (e) => {
+      if (e.key === 'Backspace' && !box.value && i > 0) { e.preventDefault(); boxes[i - 1].value = ''; boxes[i - 1].focus(); }
+      if (e.key === 'ArrowLeft' && i > 0) { e.preventDefault(); boxes[i - 1].focus(); }
+      if (e.key === 'ArrowRight' && i < boxes.length - 1) { e.preventDefault(); boxes[i + 1].focus(); }
+    });
+  });
+  Object.defineProperty(group, 'value', { get: () => digits().join('') });
+  Object.defineProperty(group, 'disabled', { get: () => boxes[0].disabled, set: (v) => boxes.forEach((b) => { b.disabled = v; }) });
+  group.focus = () => (boxes.find((b) => !b.value) || boxes[0]).focus();
+  return group;
+}
