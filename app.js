@@ -450,7 +450,7 @@ const fileSlug = (name) => name.normalize('NFD').replace(/[̀-ͯ]/g, '').replace
 
 function shareBox(venue) {
   const link = publicLink(venue);
-  const status = el('small', { class: 'copy-status' });
+  const status = el('small', { class: 'copy-status', role: 'status' });
   const canvas = qrCanvas(link);
   const qrArea = canvas
     ? el('div', { class: 'qr-area' }, canvas, el('button', { type: 'button', class: 'switch', text: 'Descargar QR (PNG)', onclick: () => {
@@ -466,6 +466,9 @@ function shareBox(venue) {
     } }))
     : el('p', { class: 'notice', text: 'No se pudo cargar el generador de QR. Recarga la página.' });
   return el('div', { class: 'share' },
+    el('div', { class: 'share-head' },
+      el('h3', { text: 'Comparte tu local' }),
+      el('p', { text: 'Imprime el QR o comparte el link: tus clientes piden canciones sin instalar nada.' })),
     qrArea,
     el('p', {}, 'Link público: ', el('a', { href: link, target: '_blank', rel: 'noopener', text: link })),
     el('button', { type: 'button', class: 'switch', text: 'Copiar link', onclick: async () => {
@@ -476,6 +479,8 @@ function shareBox(venue) {
 
 async function showDashboard(user, { selectId } = {}) {
   let venues = [];
+  // Mientras llegan los locales se ve el esqueleto del panel, no una pantalla vacía.
+  showView(panelSkeleton(user));
   try { venues = await api('/venues'); }
   catch (err) {
     if (err.status === 401) { clearToken(); showLanding(); if (!dialog.open) dialog.showModal(); return authForm('login'); }
@@ -487,13 +492,15 @@ async function showDashboard(user, { selectId } = {}) {
   const select = (id) => { selectedId = id; renderSidebar(); renderMain(); };
   const renderSidebar = () => sidebar.replaceChildren(
     el('h3', { text: 'Tus locales' }),
-    venues.length ? el('ul', {}, ...venues.map((v) => el('li', {}, el('button', { type: 'button', class: v.id === selectedId ? 'venue-item selected' : 'venue-item', text: v.name, onclick: () => select(v.id) })))) : el('p', { text: 'Aún no tienes locales.' }),
-    el('button', { type: 'button', text: '+ Nuevo local', onclick: () => select(null) }));
+    venues.length ? el('ul', {}, ...venues.map((v) => el('li', {}, el('button', { type: 'button', class: v.id === selectedId ? 'venue-item selected' : 'venue-item', ...(v.id === selectedId ? { 'aria-current': 'true' } : {}), onclick: () => select(v.id) },
+      el('strong', { text: v.name }), el('small', { text: VENUE_KIND_LABELS[v.kind] || v.kind })))))
+      : emptyState('Aún no tienes locales', 'Crea el primero para tener tu link, tu QR y tu emisora.'),
+    el('button', { type: 'button', class: 'new-venue', text: '+ Nuevo local', onclick: () => select(null) }));
   const renderMain = () => {
     const venue = venues.find((v) => v.id === selectedId);
     if (venue) return main.replaceChildren(venueDetail(venue, { onEdited: () => renderSidebar(), onConsole: (v) => showConsole(v, { onBack: () => showDashboard(user, { selectId: v.id }) }) }));
     stopPanelPoll();
-    main.replaceChildren(el('h2', { text: 'Nuevo local' }), el('p', { text: 'Registra un local para activar el DJ inteligente.' }),
+    main.replaceChildren(el('h2', { text: venues.length ? 'Nuevo local' : 'Crea tu primer local' }), el('p', { class: 'muted', text: 'Registra un local para activar el DJ inteligente.' }),
       venueForm(null, async (data) => { const created = await api('/venues', { method: 'POST', body: JSON.stringify(data) }); venues.unshift(created); select(created.id); }));
   };
   const logout = signOut;
@@ -612,13 +619,14 @@ function songSearch(code, onPick) {
   const show = (tracks) => {
     if (!tracks.length) { hint.textContent = 'No encontramos canciones con esa búsqueda.'; list.replaceChildren(); return; }
     hint.textContent = 'Toca una canción para pedirla.';
-    list.replaceChildren(...tracks.map((track) => {
+    list.replaceChildren(...tracks.map((track, index) => {
       const pick = el('button', { type: 'button', class: 'track', 'aria-label': `Pedir ${track.title} de ${track.artist}` },
         trackCover(track),
         el('span', { class: 'track-info' }, el('strong', { text: track.title }), el('small', { text: track.genre ? `${track.artist} · ${track.genre}` : track.artist })),
         kindBadge(track));
       pick.addEventListener('click', () => { void onPick(track, list); });
-      return el('li', {}, pick);
+      // Los resultados aparecen escalonados (--i marca el orden de la animación).
+      return el('li', { class: 'appear', style: `--i: ${index}` }, pick);
     }));
   };
   const search = async (q) => {
@@ -697,7 +705,7 @@ function nowPlayingCard(song) {
   return el('div', { class: 'now-card' },
     trackCover({ ...song, trackId: song.id }, 160),
     el('div', { class: 'now-info' },
-      el('small', { class: 'eyebrow', text: 'Sonando ahora' }),
+      el('small', { class: 'eyebrow' }, el('span', { class: 'live-bars', 'aria-hidden': 'true' }, el('i'), el('i'), el('i'), el('i')), 'Sonando ahora'),
       el('strong', { text: song.title }),
       el('span', { text: song.genre ? `${song.artist} · ${song.genre}` : song.artist }),
       song.kind === 'preview' ? kindBadge(song) : null,
@@ -717,21 +725,22 @@ function venuePage(venue, code) {
       const data = await api(`/public/venues/${encodeURIComponent(code)}/requests?ids=${ids.map(encodeURIComponent).join(',')}`);
       mineSection.hidden = !data.requests.length;
       const order = new Map(ids.map((id, i) => [id, i]));
-      mineList.replaceChildren(...data.requests.sort((a, b) => order.get(a.id) - order.get(b.id)).map((r) => el('li', { class: `state-${r.state}` },
+      animateList(mineList, data.requests.sort((a, b) => order.get(a.id) - order.get(b.id)), (r) => r.id, (r) => el('li', { class: `state-${r.state}` },
         el('span', { class: 'track-info' }, el('strong', {}, r.title, kindBadge(r)), el('small', { text: r.artist })),
-        el('span', { class: 'state', text: r.stateLabel }))));
+        el('span', { class: 'state', text: r.stateLabel })));
     } catch { /* se reintenta en la siguiente actualización */ }
   };
   const refresh = async () => {
     try {
       const data = await api(`/public/venues/${encodeURIComponent(code)}/now`);
       nowArea.replaceChildren(nowPlayingCard(data.nowPlaying));
+      nowArea.classList.toggle('is-live', data.station?.status === 'playing');
       const emptyQueue = data.station ? 'La emisora está eligiendo las próximas canciones.' : 'No hay canciones en cola. Las aceptadas por el DJ aparecen aquí.';
       queueHint.textContent = data.queue.length ? '' : emptyQueue;
-      queueList.replaceChildren(...data.queue.map((song) => el('li', {}, trackCover({ ...song, trackId: song.id }, 40),
+      animateList(queueList, data.queue, (song) => song.id, (song) => el('li', {}, trackCover({ ...song, trackId: song.id }, 40),
         el('span', { class: 'track-info' }, el('strong', { text: song.title }), el('small', { text: song.artist })),
         song.kind === 'preview' ? kindBadge(song) : null,
-        song.source === 'request' ? el('span', { class: 'requested', text: 'Pedida' }) : null)));
+        song.source === 'request' ? el('span', { class: 'requested', text: 'Pedida' }) : null));
     } catch (err) { queueHint.textContent = err.message; }
     void refreshMine();
   };
