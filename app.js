@@ -39,22 +39,20 @@ async function api(path, options = {}) {
   let res;
   try {
     res = await fetch(url, {
-      credentials: 'include',
       ...options,
       headers,
     });
   } catch {
     throw new Error('No pudimos conectar con el servidor. Revisa tu conexión e intenta de nuevo.');
   }
-  // Si el access token expiró o quedó desfasado, intercambia la cookie HttpOnly
-  // por un token nuevo y reintenta una vez antes de cerrar la sesión.
+  // Si el access token expiró, Supabase lo renueva y se reintenta una vez antes de cerrar la sesión.
   if (res.status === 401 && token && path.startsWith('/venues')) {
     try {
       const refreshed = await supabaseAuth((auth) => auth.refreshSession());
       if (refreshed?.session?.access_token) {
         setToken(refreshed.session.access_token);
         headers.Authorization = `Bearer ${refreshed.session.access_token}`;
-        res = await fetch(url, { credentials: 'include', ...options, headers });
+        res = await fetch(url, { ...options, headers });
       }
     } catch {
       // Se mostrará el error de la petición original si la renovación falla.
