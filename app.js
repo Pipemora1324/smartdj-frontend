@@ -308,8 +308,6 @@ function showLanding() {
 
 // ---------- Panel del dueño ----------
 const VENUE_KIND_LABELS = { restaurant: 'Restaurante', cafe: 'Café', salsa_bar: 'Bar de salsa', nightclub: 'Discoteca', lounge: 'Lounge', other: 'Otro' };
-const REQUEST_STATUS_LABELS = { queued: 'En cola', accepted: 'Aceptada', bridging: 'Con transición', rejected: 'Rechazada', played: 'Sonada' };
-const PANEL_POLL_MS = 5000;
 let panelPoll = null;
 function stopPanelPoll() { clearInterval(panelPoll); panelPoll = null; }
 const publicLink = (venue) => `${location.origin}/?venue=${encodeURIComponent(venue.public_code)}`;
@@ -335,56 +333,14 @@ function venueForm(venue, onSave, onCancel) {
   return form;
 }
 
-// Botones de acción según el estado actual de la petición.
-function requestActions(request, onChange) {
-  const actions = [];
-  if (request.status !== 'accepted' && request.status !== 'played') actions.push(['accepted', 'Aceptar']);
-  if (request.status !== 'rejected' && request.status !== 'played') actions.push(['rejected', 'Rechazar']);
-  if (request.status !== 'played' && request.status !== 'rejected') actions.push(['played', 'Marcar como sonada']);
-  return actions.map(([status, label]) => el('button', { type: 'button', class: `action action-${status}`, text: label, onclick: (e) => onChange(request, status, e.currentTarget) }));
-}
-
-function requestRow(request, onChange) {
-  const cover = request.artwork_url
-    ? el('img', { class: 'cover', src: request.artwork_url, alt: '', width: '48', height: '48', loading: 'lazy' })
-    : el('div', { class: 'cover cover-empty', 'aria-hidden': 'true', text: '♪' });
-  const when = new Date(request.created_at).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
-  return el('li', { class: `request status-${request.status}` },
-    cover,
-    el('div', { class: 'request-info' },
-      el('strong', { text: request.title }),
-      el('small', { text: `${request.artist} · pedida por ${request.guest_name} · ${when}` }),
-      request.ai_reason ? el('small', { class: 'reason', text: request.ai_reason }) : null),
-    el('span', { class: 'badge', text: REQUEST_STATUS_LABELS[request.status] || request.status }),
-    el('div', { class: 'actions' }, ...requestActions(request, onChange), previewButton({ previewUrl: request.preview_url, trackId: request.id, title: request.title })));
-}
-
 // Detalle de un local: datos, link público, QR y peticiones con actualización periódica.
 function venueDetail(venue, { onEdited, onConsole }) {
-  const list = el('ul', { class: 'requests' });
-  const info = el('p', { class: 'notice', text: 'Cargando peticiones…' });
   const header = el('div', { class: 'venue-head' });
   const editArea = el('div');
-  const refresh = async () => {
-    try {
-      const data = await api(`/venues/${encodeURIComponent(venue.id)}/dashboard?limit=50`);
-      info.textContent = data.requests.length ? `Peticiones recientes (se actualizan cada ${PANEL_POLL_MS / 1000} s).` : 'Todavía no hay peticiones. Comparte el link o el QR del local.';
-      list.replaceChildren(...data.requests.map((r) => requestRow(r, changeStatus)));
-    } catch (err) {
-      if (err.status === 401) { stopPanelPoll(); clearToken(); showLanding(); authForm('login'); return dialog.showModal(); }
-      info.textContent = err.message;
-    }
-  };
-  const changeStatus = async (request, status, button) => {
-    button.disabled = true;
-    try { await api(`/venues/${encodeURIComponent(venue.id)}/requests/${encodeURIComponent(request.id)}`, { method: 'PATCH', body: JSON.stringify({ status }) }); await refresh(); }
-    catch (err) { info.textContent = err.message; button.disabled = false; }
-  };
   const renderHeader = () => header.replaceChildren(
     el('div', {},
       el('h2', { text: venue.name }),
       el('p', { text: `${VENUE_KIND_LABELS[venue.kind] || venue.kind} · ${venue.ambience}` })),
-    el('button', { type: 'button', class: 'console-open', text: '🎧 Consola de DJ', onclick: () => onConsole?.(venue) }),
     el('button', { type: 'button', class: 'switch', text: 'Editar local', onclick: () => {
       editArea.replaceChildren(venueForm(venue, async (data) => {
         const saved = await api(`/venues/${encodeURIComponent(venue.id)}`, { method: 'PATCH', body: JSON.stringify(data) });
@@ -396,9 +352,11 @@ function venueDetail(venue, { onEdited, onConsole }) {
     } }));
   renderHeader();
   stopPanelPoll();
-  void refresh();
-  panelPoll = setInterval(() => { if (!document.hidden) void refresh(); }, PANEL_POLL_MS);
-  return el('div', { class: 'venue-detail' }, header, editArea, shareBox(venue), el('h3', { text: 'Peticiones' }), info, list);
+  // La música, la cola y las peticiones del público se manejan solo desde la consola de DJ.
+  const consoleCta = el('div', { class: 'console-cta' },
+    el('button', { type: 'button', class: 'console-open', text: '🎧 Consola de DJ', onclick: () => onConsole?.(venue) }),
+    el('p', { text: 'La emisora, la cola y las peticiones del público se manejan desde la consola.' }));
+  return el('div', { class: 'venue-detail' }, header, editArea, consoleCta, shareBox(venue));
 }
 
 // Link público del local con botón para copiarlo (el QR se agrega en shareBox del bloque D).
@@ -548,31 +506,11 @@ function requestStatusView(requestId, track = null) {
 // ---------- Pedir una canción (link público del local) ----------
 // El cliente busca en el buscador del backend (iTunes desde el servidor) y al tocar una canción la pide.
 const SEARCH_DEBOUNCE_MS = 400;
-let previewAudio = null;
-function stopPreview() { if (previewAudio) { previewAudio.pause(); previewAudio = null; } }
 
 function trackCover(track, size = 56) {
   return track.artworkUrl
     ? el('img', { class: 'cover', src: track.artworkUrl, alt: '', width: String(size), height: String(size), loading: 'lazy' })
     : el('div', { class: 'cover cover-empty', 'aria-hidden': 'true', text: '♪' });
-}
-
-// Botón para escuchar los 30 s de muestra; solo suena una a la vez.
-function previewButton(track) {
-  if (!track.previewUrl) return null;
-  const btn = el('button', { type: 'button', class: 'preview', 'aria-label': `Escuchar 30 segundos de ${track.title}`, text: '▶ 30 s' });
-  btn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    const playingThis = previewAudio && previewAudio.dataset.trackId === track.trackId;
-    stopPreview();
-    document.querySelectorAll('button.preview').forEach((b) => { b.textContent = '▶ 30 s'; });
-    if (playingThis) return;
-    previewAudio = new Audio(track.previewUrl);
-    previewAudio.dataset.trackId = track.trackId;
-    previewAudio.addEventListener('ended', () => { btn.textContent = '▶ 30 s'; });
-    previewAudio.play().then(() => { btn.textContent = '■ Detener'; }).catch(() => { btn.textContent = 'Sin audio'; });
-  });
-  return btn;
 }
 
 // Etiqueta del origen de una pista: "Completa" (suena entera) o "Preview 30 s" (corte de iTunes).
@@ -633,7 +571,6 @@ function songRequestView(venue, code, { onRequested } = {}) {
       // Pista completa (Jamendo) por proveedor e id; preview de iTunes por trackId.
       const song = track.kind === 'full' ? { provider: track.provider, externalId: track.externalId } : { trackId: track.trackId };
       const created = await api(`/public/venues/${encodeURIComponent(code)}/requests`, { method: 'POST', body: JSON.stringify({ ...song, ...(guestName ? { guestName } : {}) }) });
-      stopPreview();
       requestStatusView(created.id, track);
       if (!dialog.open) dialog.showModal();
       // Al cerrar el estado se puede pedir otra canción.
