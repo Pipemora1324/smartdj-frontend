@@ -7,4 +7,4 @@
   } catch (e) {
     // Almacenamiento no disponible: se usa el tema del sistema.
   }
-}());
+})();

@@ -25,10 +25,7 @@
   var DEFAULT_LOCAL = 'http://localhost:3000';
   var DEFAULT_REMOTE = 'https://smart-dj-platform.onrender.com';
 
-  var apiUrl =
-    window.SMARTDJ_API_URL ||
-    fromMeta ||
-    (isLocal ? DEFAULT_LOCAL : DEFAULT_REMOTE);
+  var apiUrl = window.SMARTDJ_API_URL || fromMeta || (isLocal ? DEFAULT_LOCAL : DEFAULT_REMOTE);
 
   // Quitamos barras finales para evitar dobles slash al concatenar.
   window.SMARTDJ_API_URL = String(apiUrl).replace(/\/+$/, '');

@@ -40,22 +40,46 @@
   // ---------- Header según la sesión ----------
   // Iniciales para el avatar: dos letras del nombre o, si no hay, del correo.
   function initials(name, email) {
-    const words = String(name || '').trim().split(/\s+/).filter(Boolean);
+    const words = String(name || '')
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean);
     if (words.length >= 2) return (words[0][0] + words[words.length - 1][0]).toUpperCase();
     if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
-    const local = String(email || '').split('@')[0].replace(/[^\p{L}\p{N}]/gu, '');
+    const local = String(email || '')
+      .split('@')[0]
+      .replace(/[^\p{L}\p{N}]/gu, '');
     return (local.slice(0, 2) || '?').toUpperCase();
   }
 
-  const LANDING_LINKS = [{ href: '#como-funciona', label: 'Cómo funciona' }, { href: '#roles', label: 'Para quién' }];
+  const LANDING_LINKS = [
+    { href: '#como-funciona', label: 'Cómo funciona' },
+    { href: '#roles', label: 'Para quién' },
+  ];
   // Qué muestra el header: sin sesión, enlaces de la landing y acceso; con sesión, avatar y menú de la cuenta.
   function headerModel(user) {
     if (!user) {
-      return { signedIn: false, links: LANDING_LINKS, actions: [{ id: 'login', label: 'Ingresar' }, { id: 'register', label: 'Crear establecimiento' }] };
+      return {
+        signedIn: false,
+        links: LANDING_LINKS,
+        actions: [
+          { id: 'login', label: 'Ingresar' },
+          { id: 'register', label: 'Crear establecimiento' },
+        ],
+      };
     }
     return {
-      signedIn: true, links: LANDING_LINKS, initials: initials(user.name, user.email), displayName: user.name || user.email || 'Tu cuenta', email: user.email || '',
-      menu: [{ id: 'venues', label: 'Mis locales' }, { id: 'console', label: 'Consola de DJ' }, { id: 'theme', label: 'Cambiar tema' }, { id: 'logout', label: 'Cerrar sesión' }],
+      signedIn: true,
+      links: LANDING_LINKS,
+      initials: initials(user.name, user.email),
+      displayName: user.name || user.email || 'Tu cuenta',
+      email: user.email || '',
+      menu: [
+        { id: 'venues', label: 'Mis locales' },
+        { id: 'console', label: 'Consola de DJ' },
+        { id: 'theme', label: 'Cambiar tema' },
+        { id: 'logout', label: 'Cerrar sesión' },
+      ],
     };
   }
 
@@ -109,7 +133,11 @@
   }
   // Botón de mostrar/ocultar: tipo del campo y texto accesible según el estado.
   function revealState(visible) {
-    return { type: visible ? 'text' : 'password', pressed: visible ? 'true' : 'false', label: visible ? 'Ocultar contraseña' : 'Mostrar contraseña' };
+    return {
+      type: visible ? 'text' : 'password',
+      pressed: visible ? 'true' : 'false',
+      label: visible ? 'Ocultar contraseña' : 'Mostrar contraseña',
+    };
   }
   function confirmError(password, confirm) {
     if (!confirm) return 'Repite la contraseña.';
@@ -129,8 +157,22 @@
   }
 
   global.SmartDJUI = {
-    THEME_KEY, readTheme, saveTheme, resolveTheme, oppositeTheme, themeToggleLabel,
-    initials, headerModel, menuNextIndex, trapFocusIndex,
-    passwordChecks, passwordStrength, revealState, confirmError, CODE_LENGTH, onlyDigits, distributeCode,
+    THEME_KEY,
+    readTheme,
+    saveTheme,
+    resolveTheme,
+    oppositeTheme,
+    themeToggleLabel,
+    initials,
+    headerModel,
+    menuNextIndex,
+    trapFocusIndex,
+    passwordChecks,
+    passwordStrength,
+    revealState,
+    confirmError,
+    CODE_LENGTH,
+    onlyDigits,
+    distributeCode,
   };
-}(typeof window !== 'undefined' ? window : globalThis));
+})(typeof window !== 'undefined' ? window : globalThis);

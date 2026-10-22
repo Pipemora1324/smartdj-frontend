@@ -98,7 +98,20 @@
   const SOURCE_LABELS = { autodj: 'AutoDJ', request: 'Petición', manual: 'Manual' };
 
   global.SmartDJConsole = {
-    DEFAULT_CROSSFADE, EQ_MIN_DB, EQ_MAX_DB, SOURCE_LABELS,
-    equalPowerGains, fadeCurve, formatTime, transitionPlan, shouldTransition, waveformBars, moveItem, moveTo, eqGain, elementVolume, newConsoleId,
+    DEFAULT_CROSSFADE,
+    EQ_MIN_DB,
+    EQ_MAX_DB,
+    SOURCE_LABELS,
+    equalPowerGains,
+    fadeCurve,
+    formatTime,
+    transitionPlan,
+    shouldTransition,
+    waveformBars,
+    moveItem,
+    moveTo,
+    eqGain,
+    elementVolume,
+    newConsoleId,
   };
-}(typeof window !== 'undefined' ? window : globalThis));
+})(typeof window !== 'undefined' ? window : globalThis);
