@@ -372,8 +372,6 @@ function showLanding() {
 
 // ---------- Panel del dueño ----------
 const VENUE_KIND_LABELS = { restaurant: 'Restaurante', cafe: 'Café', salsa_bar: 'Bar de salsa', nightclub: 'Discoteca', lounge: 'Lounge', other: 'Otro' };
-let panelPoll = null;
-function stopPanelPoll() { clearInterval(panelPoll); panelPoll = null; }
 const publicLink = (venue) => `${location.origin}/?venue=${encodeURIComponent(venue.public_code)}`;
 
 // Formulario de local (crear o editar). onSave(datos) debe devolver una promesa.
@@ -415,7 +413,6 @@ function venueDetail(venue, { onEdited, onConsole }) {
       }, () => editArea.replaceChildren()));
     } }));
   renderHeader();
-  stopPanelPoll();
   // La música, la cola y las peticiones del público se manejan solo desde la consola de DJ.
   const consoleCta = el('div', { class: 'console-cta' },
     el('button', { type: 'button', class: 'console-open', text: '🎧 Consola de DJ', onclick: () => onConsole?.(venue) }),
@@ -499,7 +496,6 @@ async function showDashboard(user, { selectId } = {}) {
   const renderMain = () => {
     const venue = venues.find((v) => v.id === selectedId);
     if (venue) return main.replaceChildren(venueDetail(venue, { onEdited: () => renderSidebar(), onConsole: (v) => showConsole(v, { onBack: () => showDashboard(user, { selectId: v.id }) }) }));
-    stopPanelPoll();
     main.replaceChildren(el('h2', { text: venues.length ? 'Nuevo local' : 'Crea tu primer local' }), el('p', { class: 'muted', text: 'Registra un local para activar el DJ inteligente.' }),
       venueForm(null, async (data) => { const created = await api('/venues', { method: 'POST', body: JSON.stringify(data) }); venues.unshift(created); select(created.id); }));
   };
@@ -512,7 +508,6 @@ async function showDashboard(user, { selectId } = {}) {
 }
 // Cerrar sesión desde el panel o desde el menú de la cuenta del header.
 async function signOut() {
-  stopPanelPoll();
   if (typeof closeConsole === 'function') closeConsole();
   if (supabaseClient) await supabaseClient.auth.signOut().catch(() => {});
   clearToken();

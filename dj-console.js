@@ -1,7 +1,7 @@
 // ---------- Consola de DJ del panel del dueño (emisora automática) ----------
 // Dos decks con EQ de 3 bandas, crossfader de potencia constante, volumen maestro y por deck, cola y AutoDJ.
 // El audio suena en este navegador; el servidor guarda el estado y la cola (ver DECISIONES_DJ.md del backend).
-// Usa el(), api(), showView() y stopPanelPoll() de app.js. Todo dato externo se inserta con textContent.
+// Usa el(), api() y showView() de app.js. Todo dato externo se inserta con textContent.
 const DJ = window.SmartDJConsole;
 const CONSOLE_POLL_MS = 15000;
 const STALL_MS = 10000;
@@ -83,7 +83,6 @@ function createDeck(name, ctx, master) {
 }
 
 function showConsole(venue, { onBack } = {}) {
-  stopPanelPoll();
   closeConsole();
   const P = `/venues/${encodeURIComponent(venue.id)}/player`;
   const c = { venue, consoleId: DJ.newConsoleId(), snapshot: null, ctx: null, master: null, decks: null, active: 0, x: 0, transitioning: false, playing: false, started: false, lost: false, closed: false, pollTimer: null, uiTimer: null, volumeTimer: null, rampUntil: 0 };
