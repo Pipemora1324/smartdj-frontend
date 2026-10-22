@@ -571,6 +571,7 @@ function songRequestView(venue, code, { onRequested } = {}) {
       // Pista completa (Jamendo) por proveedor e id; preview de iTunes por trackId.
       const song = track.kind === 'full' ? { provider: track.provider, externalId: track.externalId } : { trackId: track.trackId };
       const created = await api(`/public/venues/${encodeURIComponent(code)}/requests`, { method: 'POST', body: JSON.stringify({ ...song, ...(guestName ? { guestName } : {}) }) });
+      rememberRequest(code, created.id);
       requestStatusView(created.id, track);
       if (!dialog.open) dialog.showModal();
       // Al cerrar el estado se puede pedir otra canción.
@@ -598,6 +599,16 @@ const NOW_POLL_MS = 10000;
 const LIVE_REFRESH_MS = 2000;
 let nowPoll = null;
 
+// Peticiones propias del cliente en este local: solo sus ids, en el navegador (como mucho 10).
+const MY_REQUESTS_MAX = 10;
+const myRequestsKey = (code) => `smartdj-requests-${code}`;
+function loadMyRequests(code) {
+  try { const ids = JSON.parse(localStorage.getItem(myRequestsKey(code)) || '[]'); return Array.isArray(ids) ? ids.slice(0, MY_REQUESTS_MAX) : []; } catch { return []; }
+}
+function rememberRequest(code, id) {
+  try { localStorage.setItem(myRequestsKey(code), JSON.stringify([id, ...loadMyRequests(code).filter((x) => x !== id)].slice(0, MY_REQUESTS_MAX))); } catch { /* sin almacenamiento: solo se pierde la lista */ }
+}
+
 function nowPlayingCard(song) {
   if (!song) return el('div', { class: 'now-card empty' }, el('p', { text: 'Todavía no suena ninguna canción pedida. ¡Pide la primera!' }));
   return el('div', { class: 'now-card' },
@@ -614,6 +625,20 @@ function venuePage(venue, code) {
   const nowArea = el('div', { class: 'now-area' }, el('p', { class: 'notice', text: 'Cargando lo que suena…' }));
   const queueList = el('ol', { class: 'queue' });
   const queueHint = el('p', { class: 'notice' });
+  const mineList = el('ul', { class: 'my-requests' });
+  const mineSection = el('section', { class: 'my-requests-box', hidden: '' }, el('h2', { text: 'Tus peticiones' }), mineList);
+  const refreshMine = async () => {
+    const ids = loadMyRequests(code);
+    if (!ids.length) return;
+    try {
+      const data = await api(`/public/venues/${encodeURIComponent(code)}/requests?ids=${ids.map(encodeURIComponent).join(',')}`);
+      mineSection.hidden = !data.requests.length;
+      const order = new Map(ids.map((id, i) => [id, i]));
+      mineList.replaceChildren(...data.requests.sort((a, b) => order.get(a.id) - order.get(b.id)).map((r) => el('li', { class: `state-${r.state}` },
+        el('span', { class: 'track-info' }, el('strong', {}, r.title, kindBadge(r)), el('small', { text: r.artist })),
+        el('span', { class: 'state', text: r.stateLabel }))));
+    } catch { /* se reintenta en la siguiente actualización */ }
+  };
   const refresh = async () => {
     try {
       const data = await api(`/public/venues/${encodeURIComponent(code)}/now`);
@@ -625,6 +650,7 @@ function venuePage(venue, code) {
         song.kind === 'preview' ? kindBadge(song) : null,
         song.source === 'request' ? el('span', { class: 'requested', text: 'Pedida' }) : null)));
     } catch (err) { queueHint.textContent = err.message; }
+    void refreshMine();
   };
   const { view } = songRequestView(venue, code, { onRequested: refresh });
   // En vivo: el backend avisa por SSE cada cambio de la emisora y se vuelve a pedir /now (como mucho cada 2 s).
@@ -644,7 +670,7 @@ function venuePage(venue, code) {
   return el('div', { class: 'venue-page' },
     el('header', { class: 'venue-page-head' }, el('h1', { text: venue.name }), venue.ambience ? el('p', { text: venue.ambience }) : null),
     el('div', { class: 'venue-page-body' },
-      el('section', { class: 'dj-booth' }, nowArea, el('h2', { text: 'Próximas canciones' }), queueHint, queueList),
+      el('section', { class: 'dj-booth' }, nowArea, el('h2', { text: 'Próximas canciones' }), queueHint, queueList, mineSection),
       view));
 }
 
