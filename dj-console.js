@@ -641,10 +641,10 @@ function showConsole(venue, { onBack } = {}) {
           el('small', { text: `${r.artist} · pidió ${r.guestName} · hace ${minutesAgo(r.createdAt)} min` }),
           el('small', { class: 'reason', text: r.state === 'queued' ? 'El motor la está evaluando…' : fitText })),
         el('span', { class: 'source', text: r.stateLabel }),
-        busy ? null : el('div', { class: 'request-actions' },
+        r.state === 'playing' ? null : el('div', { class: 'request-actions' },
           el('button', { type: 'button', text: 'Reproducir ahora', onclick: () => requestAction(r, true) }),
-          el('button', { type: 'button', class: 'ghost-dark', text: 'Añadir a la cola', onclick: () => requestAction(r, false) }),
-          el('button', { type: 'button', class: 'remove', text: 'Descartar', onclick: () => dismiss(r) })));
+          busy ? null : el('button', { type: 'button', class: 'ghost-dark', text: 'Añadir a la cola', onclick: () => requestAction(r, false) }),
+          busy ? null : el('button', { type: 'button', class: 'remove', text: 'Descartar', onclick: () => dismiss(r) })));
     }));
   }
   async function refreshRequests() {
