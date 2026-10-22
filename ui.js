@@ -334,7 +334,10 @@ function otpInput(onComplete) {
     });
   });
   Object.defineProperty(group, 'value', { get: () => digits().join('') });
-  Object.defineProperty(group, 'disabled', { get: () => boxes[0].disabled, set: (v) => boxes.forEach((b) => { b.disabled = v; }) });
+  Object.defineProperty(group, 'disabled', {
+    get: () => boxes[0].disabled,
+    set(value) { for (const box of boxes) box.disabled = value; },
+  });
   group.focus = () => (boxes.find((b) => !b.value) || boxes[0]).focus();
   return group;
 }
