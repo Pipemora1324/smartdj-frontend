@@ -158,11 +158,7 @@ function render(...nodes) { content.replaceChildren(...nodes); }
 
 // ---------- Códigos de 6 dígitos ----------
 function validateCode(value) { const v = (value || '').trim(); if (!v) return 'Escribe el código que te enviamos.'; if (!/^\d{6}$/.test(v)) return 'El código debe tener 6 dígitos.'; return null; }
-function codeInput() {
-  const input = el('input', { name: 'code', inputmode: 'numeric', autocomplete: 'one-time-code', maxlength: '6', placeholder: 'Código de 6 dígitos' });
-  input.addEventListener('input', () => { input.value = input.value.replace(/\D/g, '').slice(0, 6); });
-  return input;
-}
+function codeInput(onComplete) { return otpInput(onComplete); }
 // Botón "Reenviar código" con cuenta regresiva; respeta el retryAfter que devuelve el backend.
 function resendButton(send, showMessage, initialWait = 60) {
   const btn = el('button', { type: 'button', class: 'switch' });
@@ -187,21 +183,24 @@ function resendButton(send, showMessage, initialWait = 60) {
 
 // ---------- Verificación del correo ----------
 function verifyStep(email, message, initialWait = 60) {
-  const info = el('p', { class: 'notice', text: message || 'Te enviamos un código de 6 dígitos a tu correo.' });
-  const input = codeInput();
+  const info = el('p', { class: 'notice', role: 'status', text: message || 'Te enviamos un código de 6 dígitos a tu correo.' });
+  const input = codeInput(() => form.requestSubmit());
   const fieldError = el('p', { class: 'field-error' });
-  const formError = el('p', { class: 'error', id: 'formError' });
-  const form = el('form', { novalidate: '' }, input, fieldError, formError, el('button', { type: 'submit', text: 'Verificar' }));
+  const formError = el('p', { class: 'error', id: 'formError', role: 'alert' });
+  const submit = el('button', { type: 'submit', text: 'Verificar' });
+  const form = el('form', { novalidate: '' }, el('p', { class: 'field-label', text: 'Código de verificación' }), input, fieldError, formError, submit);
   const showMessage = (text, isError) => { if (isError) return setError(formError, text); setError(formError, ''); info.textContent = text; };
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const codeErr = validateCode(input.value); setError(fieldError, codeErr);
     if (codeErr) return setError(formError, codeErr);
     setError(formError, '');
-    try {
-      const verified = await supabaseAuth((auth) => auth.verifyOtp({ email, token: input.value.trim(), type: 'email' }));
-      await openSession(verified.session);
-    } catch (err) { setError(formError, err.message); }
+    await withLoading(submit, 'Verificando…', async () => {
+      try {
+        const verified = await supabaseAuth((auth) => auth.verifyOtp({ email, token: input.value.trim(), type: 'email' }));
+        await openSession(verified.session);
+      } catch (err) { setError(formError, err.message); }
+    });
   });
   render(el('section', { class: 'auth' },
     el('h2', { text: 'Verifica tu correo' }),
@@ -221,22 +220,71 @@ function offerVerification(email, message) {
     catch (err) { if (err.code === 'over_email_send_rate_limit') verifyStep(email, 'Ya te enviamos un código hace poco. Revisa tu correo.', err.retryAfter); else showFormError(err.message); }
   } }));
 }
-function authForm(mode='login'){const register=mode==='register';content.innerHTML=`<section class="auth"><h2>${register?'Crea tu venue':'Bienvenido de nuevo'}</h2><p>${register?'Empieza a dirigir tu ambiente musical.':'Ingresa a tu consola Smart DJ.'}</p><form id="authForm" novalidate>${register?'<input name="name" placeholder="Tu nombre" autocomplete="name"><p class="field-error" data-error-for="name"></p>':''}<input name="email" type="email" placeholder="Correo electrónico" autocomplete="email"><p class="field-error" data-error-for="email"></p><input name="password" type="password" placeholder="Contraseña (mínimo 8 caracteres)" autocomplete="${register?'new-password':'current-password'}"><p class="field-error" data-error-for="password"></p><p class="error" id="formError"></p><button type="submit">${register?'Crear cuenta':'Ingresar'}</button></form>${register?'':'<button type="button" class="switch" id="forgotLink">¿Olvidaste tu contraseña?</button>'}<button type="button" class="switch" id="switchAuth">${register?'Ya tengo cuenta':'Crear una cuenta'}</button></section>`;document.querySelector('#switchAuth').onclick=()=>authForm(register?'login':'register');if(!register)document.querySelector('#forgotLink').onclick=()=>forgotForm();document.querySelector('#authForm').onsubmit=async e=>{e.preventDefault();const data=Object.fromEntries(new FormData(e.target));showFormError('');let firstError=null;if(register){const nameErr=validateName(data.name);setError(document.querySelector('[data-error-for="name"]'),nameErr);if(nameErr)firstError=nameErr;}const emailErr=validateEmail(data.email);setError(document.querySelector('[data-error-for="email"]'),emailErr);if(emailErr&&!firstError)firstError=emailErr;const passErr=validatePassword(data.password,register);setError(document.querySelector('[data-error-for="password"]'),passErr);if(passErr&&!firstError)firstError=passErr;if(firstError)return showFormError(firstError);const payload={email:data.email.trim(),password:data.password};if(register)payload.name=data.name.trim();try{if(register){const email=payload.email.toLowerCase();const signed=await supabaseAuth(auth=>auth.signUp({email,password:payload.password,options:{data:{name:payload.name}}}));if(signed?.user&&Array.isArray(signed.user.identities)&&!signed.user.identities.length)return showFormError(authErrorMessages.email_exists);if(signed?.session)return await openSession(signed.session);return verifyStep(email);}const signedIn=await supabaseAuth(auth=>auth.signInWithPassword({email:payload.email.toLowerCase(),password:payload.password}));await openSession(signedIn.session);}catch(err){if(err.code==='email_not_confirmed'||err.code==='EMAIL_NOT_VERIFIED')return offerVerification(payload.email.toLowerCase(),err.message);showFormError(err.message)}}}
+function authForm(mode = 'login') {
+  const register = mode === 'register';
+  const nameField = register ? labeledField('name', 'Tu nombre', { autocomplete: 'name', placeholder: 'Ej.: Ana Pérez' }) : null;
+  const emailField = labeledField('email', 'Correo electrónico', { type: 'email', inputmode: 'email', autocomplete: 'email', placeholder: 'nombre@correo.com' });
+  const passwordBox = passwordField('password', 'Contraseña', { autocomplete: register ? 'new-password' : 'current-password', placeholder: register ? 'Mínimo 8 caracteres' : 'Tu contraseña' });
+  const formError = el('p', { class: 'error', id: 'formError', role: 'alert' });
+  const submit = el('button', { type: 'submit', text: register ? 'Crear cuenta' : 'Ingresar' });
+  const form = el('form', { id: 'authForm', novalidate: '' }, nameField?.field, emailField.field, passwordBox.field, register ? strengthMeter(passwordBox.input) : null, formError, submit);
+  const checks = [
+    nameField && liveValidate(nameField.input, nameField.error, () => validateName(nameField.input.value)),
+    liveValidate(emailField.input, emailField.error, () => validateEmail(emailField.input.value)),
+    liveValidate(passwordBox.input, passwordBox.error, () => validatePassword(passwordBox.input.value, register)),
+  ].filter(Boolean);
+  const inputs = [nameField?.input, emailField.input, passwordBox.input].filter(Boolean);
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    showFormError('');
+    const problems = checks.map((check) => check());
+    const first = problems.findIndex(Boolean);
+    if (first >= 0) { inputs[first].focus(); return showFormError(problems[first]); }
+    const payload = { email: emailField.input.value.trim(), password: passwordBox.input.value };
+    if (register) payload.name = nameField.input.value.trim();
+    await withLoading(submit, register ? 'Creando cuenta…' : 'Ingresando…', async () => {
+      try {
+        if (register) {
+          const email = payload.email.toLowerCase();
+          const signed = await supabaseAuth((auth) => auth.signUp({ email, password: payload.password, options: { data: { name: payload.name } } }));
+          if (signed?.user && Array.isArray(signed.user.identities) && !signed.user.identities.length) return showFormError(authErrorMessages.email_exists);
+          if (signed?.session) return await openSession(signed.session);
+          return verifyStep(email);
+        }
+        const signedIn = await supabaseAuth((auth) => auth.signInWithPassword({ email: payload.email.toLowerCase(), password: payload.password }));
+        await openSession(signedIn.session);
+      } catch (err) {
+        if (err.code === 'email_not_confirmed' || err.code === 'EMAIL_NOT_VERIFIED') return offerVerification(payload.email.toLowerCase(), err.message);
+        showFormError(err.message);
+      }
+    });
+  });
+  render(el('section', { class: 'auth' },
+    el('h2', { text: register ? 'Crea tu venue' : 'Bienvenido de nuevo' }),
+    el('p', { text: register ? 'Empieza a dirigir tu ambiente musical.' : 'Ingresa a tu consola Smart DJ.' }),
+    form,
+    register ? null : el('button', { type: 'button', class: 'switch', id: 'forgotLink', text: '¿Olvidaste tu contraseña?', onclick: () => forgotForm() }),
+    el('button', { type: 'button', class: 'switch', id: 'switchAuth', text: register ? 'Ya tengo cuenta' : 'Crear una cuenta', onclick: () => authForm(register ? 'login' : 'register') })));
+  inputs[0].focus();
+}
 
 // ---------- Olvidé mi contraseña ----------
 function forgotForm() {
-  const email = el('input', { name: 'email', type: 'email', placeholder: 'Correo electrónico', autocomplete: 'email' });
-  const fieldError = el('p', { class: 'field-error' });
-  const formError = el('p', { class: 'error', id: 'formError' });
-  const form = el('form', { novalidate: '' }, email, fieldError, formError, el('button', { type: 'submit', text: 'Enviar código' }));
+  const emailField = labeledField('email', 'Correo electrónico', { type: 'email', inputmode: 'email', placeholder: 'nombre@correo.com', autocomplete: 'email' });
+  const { input: email, error: fieldError } = emailField;
+  const formError = el('p', { class: 'error', id: 'formError', role: 'alert' });
+  const submit = el('button', { type: 'submit', text: 'Enviar código' });
+  const form = el('form', { novalidate: '' }, emailField.field, formError, submit);
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const emailErr = validateEmail(email.value); setError(fieldError, emailErr);
+    const emailErr = validateEmail(email.value); setFieldState(email, fieldError, emailErr);
     if (emailErr) return setError(formError, emailErr);
     setError(formError, '');
     const value = email.value.trim().toLowerCase();
-    try { await supabaseAuth((auth) => auth.resetPasswordForEmail(value)); resetForm(value);}
-    catch (err) { setError(formError, err.message); }
+    await withLoading(submit, 'Enviando…', async () => {
+      try { await supabaseAuth((auth) => auth.resetPasswordForEmail(value)); resetForm(value);}
+      catch (err) { setError(formError, err.message); }
+    });
   });
   render(el('section', { class: 'auth' },
     el('h2', { text: 'Recuperar contraseña' }),
@@ -248,13 +296,18 @@ function forgotForm() {
 
 // ---------- Nueva contraseña con token ----------
 function resetForm(email, message) {
-  const info = el('p', { class: 'notice', text: message || 'Si el correo existe, te enviamos un código para restablecer tu contraseña.' });
-  const code = codeInput();
-  const password = el('input', { name: 'password', type: 'password', placeholder: 'Nueva contraseña (mínimo 8 caracteres)', autocomplete: 'new-password' });
-  const confirm = el('input', { name: 'confirm', type: 'password', placeholder: 'Repite la nueva contraseña', autocomplete: 'new-password' });
-  const errors = { code: el('p', { class: 'field-error' }), password: el('p', { class: 'field-error' }), confirm: el('p', { class: 'field-error' }) };
-  const formError = el('p', { class: 'error', id: 'formError' });
-  const form = el('form', { novalidate: '' }, code, errors.code, password, errors.password, confirm, errors.confirm, formError, el('button', { type: 'submit', text: 'Guardar contraseña' }));
+  const info = el('p', { class: 'notice', role: 'status', text: message || 'Si el correo existe, te enviamos un código para restablecer tu contraseña.' });
+  const code = codeInput(() => passwordBox.input.focus());
+  const passwordBox = passwordField('password', 'Nueva contraseña', { placeholder: 'Mínimo 8 caracteres', autocomplete: 'new-password' });
+  const confirmBox = passwordField('confirm', 'Repite la nueva contraseña', { placeholder: 'Escríbela otra vez', autocomplete: 'new-password' });
+  const password = passwordBox.input;
+  const confirm = confirmBox.input;
+  const errors = { code: el('p', { class: 'field-error' }), password: passwordBox.error, confirm: confirmBox.error };
+  liveValidate(password, errors.password, () => validatePassword(password.value, true));
+  liveValidate(confirm, errors.confirm, () => SmartDJUI.confirmError(password.value, confirm.value));
+  const formError = el('p', { class: 'error', id: 'formError', role: 'alert' });
+  const submit = el('button', { type: 'submit', text: 'Guardar contraseña' });
+  const form = el('form', { novalidate: '' }, el('p', { class: 'field-label', text: 'Código de recuperación' }), code, errors.code, passwordBox.field, strengthMeter(password), confirmBox.field, formError, submit);
   const showMessage = (text, isError) => { if (isError) return setError(formError, text); setError(formError, ''); info.textContent = text; };
   // verifyOtp consume el código: si luego falla updateUser (p. ej. contraseña repetida), se reintenta sin pedir otro.
   let codeVerified = false;
@@ -262,11 +315,12 @@ function resetForm(email, message) {
     e.preventDefault();
     const codeErr = codeVerified ? null : validateCode(code.value);
     const passErr = validatePassword(password.value, true);
-    const confirmErr = !passErr && password.value !== confirm.value ? 'Las contraseñas no coinciden.' : null;
-    setError(errors.code, codeErr); setError(errors.password, passErr); setError(errors.confirm, confirmErr);
+    const confirmErr = passErr ? null : SmartDJUI.confirmError(password.value, confirm.value);
+    setError(errors.code, codeErr); setFieldState(password, errors.password, passErr); setFieldState(confirm, errors.confirm, confirmErr);
     const firstError = codeErr || passErr || confirmErr;
     if (firstError) return setError(formError, firstError);
     setError(formError, '');
+    await withLoading(submit, 'Guardando…', async () => {
     try {
       if (!codeVerified) {
         await supabaseAuth((auth) => auth.verifyOtp({ email, token: code.value.trim(), type: 'recovery' }));
@@ -282,6 +336,7 @@ function resetForm(email, message) {
         el('p', { text: 'Tu contraseña se actualizó y cerramos las sesiones abiertas. Ya puedes ingresar.' }),
         el('button', { type: 'button', class: 'switch', text: 'Ingresar', onclick: () => authForm('login') })));
     } catch (err) { setError(formError, err.message); }
+    });
   });
   render(el('section', { class: 'auth' },
     el('h2', { text: 'Nueva contraseña' }),
@@ -458,7 +513,7 @@ async function signOut() {
   showLanding();
 }
 // Abrir el login o el registro en el diálogo (el header y la portada lo usan).
-function openAuth(mode = 'login') { authForm(mode); if (!dialog.open) dialog.showModal(); }
+function openAuth(mode = 'login') { authForm(mode); if (!dialog.open) dialog.showModal(); content.querySelector('input')?.focus(); }
 // "Consola de DJ" del menú de la cuenta: con un solo local abre su consola; si no, el panel para elegir o crear uno.
 async function openOwnerConsole() {
   if (!currentUser) return openAuth('login');
