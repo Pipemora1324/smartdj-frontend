@@ -358,7 +358,7 @@ function showConsole(venue, { onBack } = {}) {
     const isActive = c.decks && deck === activeDeck();
     view.root.classList.toggle('live', Boolean(isActive && item));
     view.badge.textContent = deckBadge(item, isActive, c.playing);
-    view.title.textContent = item?.track?.title ?? 'Sin pista';
+    view.title.replaceChildren(item?.track?.title ?? 'Sin pista', item?.track?.kind === 'preview' ? kindBadge(item.track) : '');
     view.artist.textContent = item?.track ? artistLine(item.track) : '';
     const credit = creditLine(item?.track);
     view.credit.replaceWith(credit);
@@ -409,7 +409,7 @@ function showConsole(venue, { onBack } = {}) {
       const li = el('li', { class: `queue-item source-${q.source}`, draggable: 'true' },
         art ? el('img', { class: 'cover', src: art, alt: '', width: '44', height: '44', loading: 'lazy' }) : el('div', { class: 'cover cover-empty', text: '♪' }),
         el('div', { class: 'queue-info' },
-          el('strong', { text: q.track.title }),
+          el('strong', {}, q.track.title, q.track.kind === 'preview' ? kindBadge(q.track) : ''),
           el('small', { text: `${q.track.artist} · ${DJ.formatTime(q.track.durationSeconds)}` }),
           q.reason ? el('small', { class: 'reason', text: q.reason }) : null),
         el('span', { class: 'source', text: DJ.SOURCE_LABELS[q.source] ?? q.source }),
