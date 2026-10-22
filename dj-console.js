@@ -9,6 +9,8 @@ const VOLUME_SAVE_MS = 800;
 const CATALOG_DEBOUNCE_MS = 500;
 const SKIP_FADE_SECONDS = 3;
 const WAVE_BARS = 120;
+const REQUESTS_POLL_MS = 20000;
+const LIVE_THROTTLE_MS = 1500;
 let activeConsole = null;
 const STATUS_LABELS = { playing: 'Al aire', paused: 'En pausa', stopped: 'Apagada' };
 
@@ -45,6 +47,9 @@ function closeConsole() {
   c.closed = true;
   clearInterval(c.pollTimer);
   clearInterval(c.uiTimer);
+  clearInterval(c.requestsTimer);
+  clearTimeout(c.liveTimer);
+  c.events?.close();
   clearTimeout(c.volumeTimer);
   for (const deck of c.decks || []) {
     clearTimeout(deck.stallTimer);
@@ -94,6 +99,8 @@ function showConsole(venue, { onBack } = {}) {
   const skipButton = el('button', { type: 'button', class: 'big ghost-dark', text: '⏭ Saltar', disabled: '' });
   const queueList = el('ol', { class: 'console-queue' });
   const queueHint = el('p', { class: 'notice-dark' });
+  const requestsList = el('ul', { class: 'console-requests' });
+  const requestsHint = el('p', { class: 'notice-dark', text: 'Cargando peticiones…' });
   const startOverlay = el('div', { class: 'console-start' });
   const lostOverlay = el('div', { class: 'console-start', hidden: '' });
 
@@ -147,6 +154,7 @@ function showConsole(venue, { onBack } = {}) {
         views[1].root)),
     el('div', { class: 'console-lower' },
       el('section', { class: 'queue-panel' }, el('h2', { text: 'Cola' }), queueHint, queueList),
+      el('section', { class: 'requests-panel' }, el('h2', { text: 'Peticiones' }), requestsHint, requestsList),
       catalogPanel())));
 
   // ---------- Servidor ----------
@@ -520,6 +528,67 @@ function showConsole(venue, { onBack } = {}) {
       say(ncToggle.checked ? 'Desde ahora solo se programan pistas con licencia comercial.' : 'Se permiten pistas con licencia no comercial.');
     } catch (err) { ncToggle.checked = !ncToggle.checked; say(err.message); }
   });
+
+  // ---------- Peticiones del público ----------
+  const minutesAgo = (date) => Math.max(0, Math.round((Date.now() - new Date(date).getTime()) / 60000));
+  const requestAction = async (request, next) => {
+    try {
+      await call('POST', `/requests/${encodeURIComponent(request.id)}/queue`, { next });
+      if (next && c.started && c.playing) {
+        preloadNext();
+        await transition({ fade: SKIP_FADE_SECONDS, reason: 'user' });
+        say(`Sonando ahora: "${request.title}".`);
+      } else {
+        say(next ? `"${request.title}" quedó primera en la cola.` : `"${request.title}" entró a la cola.`);
+        preloadNext();
+      }
+    } catch (err) { say(err.message); }
+    void refreshRequests();
+  };
+  const dismiss = async (request) => {
+    try {
+      const data = await api(`${P}/requests/${encodeURIComponent(request.id)}/dismiss`, { method: 'POST' });
+      renderRequests(data.requests);
+      say(`Se descartó "${request.title}".`);
+    } catch (err) { say(err.message); }
+  };
+  function renderRequests(requests) {
+    requestsHint.textContent = requests.length ? '' : 'No hay peticiones pendientes. Los clientes piden desde el link o el QR del local.';
+    requestsList.replaceChildren(...requests.map((r) => {
+      const art = r.artworkUrl && safeLink(r.artworkUrl);
+      const busy = r.state === 'in_queue' || r.state === 'playing';
+      const fitText = r.fits ? 'Encaja con el ambiente: el AutoDJ la intercala.' : 'No encaja del todo: decide tú.';
+      return el('li', { class: `request-item state-${r.state}` },
+        art ? el('img', { class: 'cover', src: art, alt: '', width: '44', height: '44', loading: 'lazy' }) : el('div', { class: 'cover cover-empty', text: '♪' }),
+        el('div', { class: 'queue-info' },
+          el('strong', {}, r.title, kindBadge(r)),
+          el('small', { text: `${r.artist} · pidió ${r.guestName} · hace ${minutesAgo(r.createdAt)} min` }),
+          el('small', { class: 'reason', text: r.state === 'queued' ? 'El motor la está evaluando…' : fitText })),
+        el('span', { class: 'source', text: r.stateLabel }),
+        busy ? null : el('div', { class: 'request-actions' },
+          el('button', { type: 'button', text: 'Reproducir ahora', onclick: () => requestAction(r, true) }),
+          el('button', { type: 'button', class: 'ghost-dark', text: 'Añadir a la cola', onclick: () => requestAction(r, false) }),
+          el('button', { type: 'button', class: 'remove', text: 'Descartar', onclick: () => dismiss(r) })));
+    }));
+  }
+  async function refreshRequests() {
+    try { renderRequests((await api(`${P}/requests`)).requests); } catch (err) { requestsHint.textContent = err.message; }
+  }
+  // En vivo: el SSE público del local avisa peticiones nuevas y cambios de la emisora.
+  const onLiveUpdate = () => {
+    if (c.liveTimer) return;
+    c.liveTimer = setTimeout(() => {
+      c.liveTimer = null;
+      void refreshRequests();
+      if (!c.transitioning) void call('GET').then(() => preloadNext()).catch(() => {});
+    }, LIVE_THROTTLE_MS);
+  };
+  if ('EventSource' in window && venue.public_code) {
+    c.events = new EventSource(apiUrl(`/public/venues/${encodeURIComponent(venue.public_code)}/events`));
+    c.events.addEventListener('update', onLiveUpdate);
+  }
+  void refreshRequests();
+  c.requestsTimer = setInterval(() => { if (!document.hidden) void refreshRequests(); }, REQUESTS_POLL_MS);
 
   // ---------- Control de la emisora entre dispositivos ----------
   function loseControl() {
