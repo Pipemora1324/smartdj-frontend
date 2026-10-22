@@ -344,7 +344,7 @@ function showConsole(venue, { onBack } = {}) {
       const { queueId } = deck.item;
       deck.item = null;
       renderDeck(deck);
-      if (queueId) await call('DELETE', `/queue/${encodeURIComponent(queueId)}`).catch((err) => say(err.message));
+      if (queueId) await call('DELETE', `/queue/${encodeURIComponent(queueId)}`).catch((err) => { if (err.status !== 404) say(err.message); });
       preloadNext();
     }
   };
@@ -487,7 +487,7 @@ function showConsole(venue, { onBack } = {}) {
           el('button', { type: 'button', text: '↑', 'aria-label': `Subir ${q.track.title}`, ...(index === 0 ? { disabled: '' } : {}), onclick: () => reorder(DJ.moveItem(ids, index, -1)) }),
           el('button', { type: 'button', text: '↓', 'aria-label': `Bajar ${q.track.title}`, ...(index === queue.length - 1 ? { disabled: '' } : {}), onclick: () => reorder(DJ.moveItem(ids, index, 1)) }),
           el('button', { type: 'button', class: 'remove', text: '✕', 'aria-label': `Quitar ${q.track.title} de la cola`, onclick: async () => {
-            try { await call('DELETE', `/queue/${encodeURIComponent(q.id)}`); preloadNext(); } catch (err) { say(err.message); }
+            try { await call('DELETE', `/queue/${encodeURIComponent(q.id)}`); preloadNext(); } catch (err) { if (err.status !== 404) say(err.message); else void call('GET'); }
           } })));
       li.addEventListener('dragstart', (e) => { e.dataTransfer.setData('text/plain', String(index)); li.classList.add('dragging'); });
       li.addEventListener('dragend', () => li.classList.remove('dragging'));
