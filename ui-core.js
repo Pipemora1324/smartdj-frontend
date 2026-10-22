@@ -79,8 +79,58 @@
     return null;
   }
 
+  // ---------- Contraseña ----------
+  // Reglas que se muestran en vivo. Las obligatorias coinciden con validatePassword() de app.js (8+, letra y número).
+  function passwordChecks(password) {
+    const value = String(password || '');
+    return [
+      { id: 'length', label: 'Al menos 8 caracteres', required: true, ok: value.length >= 8 },
+      { id: 'letter', label: 'Una letra', required: true, ok: /\p{L}/u.test(value) },
+      { id: 'number', label: 'Un número', required: true, ok: /\d/.test(value) },
+      { id: 'case', label: 'Mayúsculas y minúsculas', required: false, ok: /\p{Lu}/u.test(value) && /\p{Ll}/u.test(value) },
+      { id: 'symbol', label: 'Un símbolo', required: false, ok: /[^\p{L}\d\s]/u.test(value) },
+    ];
+  }
+  const STRENGTH_LABELS = ['Muy débil', 'Débil', 'Aceptable', 'Buena', 'Excelente'];
+  // Fortaleza de 0 a 4: sin las obligatorias no pasa de "Débil"; la longitud extra y las recomendadas suben el puntaje.
+  function passwordStrength(password) {
+    const value = String(password || '');
+    const checks = passwordChecks(value);
+    const meetsMinimum = checks.filter((c) => c.required).every((c) => c.ok);
+    let score = 0;
+    if (value.length >= 1) score = 1;
+    if (meetsMinimum) {
+      score = 2;
+      if (value.length >= 12) score += 1;
+      if (checks.filter((c) => !c.required && c.ok).length >= 1) score += 1;
+    }
+    score = Math.min(4, score);
+    return { score, label: value ? STRENGTH_LABELS[score] : '', meetsMinimum, checks };
+  }
+  // Botón de mostrar/ocultar: tipo del campo y texto accesible según el estado.
+  function revealState(visible) {
+    return { type: visible ? 'text' : 'password', pressed: visible ? 'true' : 'false', label: visible ? 'Ocultar contraseña' : 'Mostrar contraseña' };
+  }
+  function confirmError(password, confirm) {
+    if (!confirm) return 'Repite la contraseña.';
+    return password === confirm ? null : 'Las contraseñas no coinciden.';
+  }
+
+  // ---------- Código de 6 dígitos ----------
+  const CODE_LENGTH = 6;
+  const onlyDigits = (text) => String(text || '').replace(/\D/g, '');
+  // Escribir o pegar en la casilla "index": reparte los dígitos desde ahí y dice a qué casilla pasa el foco.
+  function distributeCode(digits, index, text, length = CODE_LENGTH) {
+    const next = Array.from({ length }, (_, i) => digits[i] || '');
+    const incoming = onlyDigits(text).slice(0, length - index);
+    for (let i = 0; i < incoming.length; i += 1) next[index + i] = incoming[i];
+    const focusIndex = incoming.length ? Math.min(index + incoming.length, length - 1) : index;
+    return { digits: next, focusIndex, complete: next.every(Boolean) };
+  }
+
   global.SmartDJUI = {
     THEME_KEY, readTheme, saveTheme, resolveTheme, oppositeTheme, themeToggleLabel,
     initials, headerModel, menuNextIndex, trapFocusIndex,
+    passwordChecks, passwordStrength, revealState, confirmError, CODE_LENGTH, onlyDigits, distributeCode,
   };
 }(typeof window !== 'undefined' ? window : globalThis));

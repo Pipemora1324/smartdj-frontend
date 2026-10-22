@@ -85,3 +85,47 @@ test('el menú móvil atrapa el foco', () => {
   assert.equal(ui.trapFocusIndex(-1, 5, true), 4);
   assert.equal(ui.trapFocusIndex(0, 0, false), null);
 });
+
+test('la fortaleza de la contraseña exige las reglas mínimas', () => {
+  const none = ui.passwordStrength('');
+  assert.deepEqual([none.score, none.label, none.meetsMinimum], [0, '', false]);
+  assert.equal(ui.passwordStrength('abc').label, 'Débil');
+  assert.equal(ui.passwordStrength('abcdefghij').meetsMinimum, false);
+  assert.equal(ui.passwordStrength('abcdefg1').label, 'Aceptable');
+  assert.equal(ui.passwordStrength('abcdefghijk1').label, 'Buena');
+  assert.equal(ui.passwordStrength('Abcdefghijk1!').label, 'Excelente');
+  assert.equal(ui.passwordStrength('Mañana2026').meetsMinimum, true);
+});
+
+test('las reglas de la contraseña se evalúan en vivo', () => {
+  const byId = (pw) => Object.fromEntries([...ui.passwordChecks(pw)].map((c) => [c.id, c.ok]));
+  assert.deepEqual(byId('abc'), { length: false, letter: true, number: false, case: false, symbol: false });
+  assert.deepEqual(byId('Abcdefg1$'), { length: true, letter: true, number: true, case: true, symbol: true });
+  assert.equal([...ui.passwordChecks('')].filter((c) => c.required).length, 3);
+});
+
+test('mostrar y ocultar la contraseña cambia el tipo y el texto accesible', () => {
+  assert.deepEqual({ ...ui.revealState(false) }, { type: 'password', pressed: 'false', label: 'Mostrar contraseña' });
+  assert.deepEqual({ ...ui.revealState(true) }, { type: 'text', pressed: 'true', label: 'Ocultar contraseña' });
+});
+
+test('la confirmación de la contraseña tiene que coincidir', () => {
+  assert.equal(ui.confirmError('Secreta1', 'Secreta1'), null);
+  assert.equal(ui.confirmError('Secreta1', 'Secreta2'), 'Las contraseñas no coinciden.');
+  assert.equal(ui.confirmError('Secreta1', ''), 'Repite la contraseña.');
+});
+
+test('las casillas del código reparten lo que se escribe o se pega', () => {
+  const empty = ['', '', '', '', '', ''];
+  const typed = ui.distributeCode(empty, 0, '4');
+  assert.deepEqual([...typed.digits], ['4', '', '', '', '', '']);
+  assert.equal(typed.focusIndex, 1);
+  const pasted = ui.distributeCode(empty, 0, ' 123-456 ');
+  assert.deepEqual([...pasted.digits], ['1', '2', '3', '4', '5', '6']);
+  assert.equal(pasted.complete, true);
+  assert.equal(pasted.focusIndex, 5);
+  const middle = ui.distributeCode(['1', '2', '', '', '', ''], 2, '98765');
+  assert.deepEqual([...middle.digits], ['1', '2', '9', '8', '7', '6']);
+  assert.equal(ui.distributeCode(empty, 3, 'abc').focusIndex, 3);
+  assert.equal(ui.onlyDigits('12a3'), '123');
+});
