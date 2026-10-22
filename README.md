@@ -126,6 +126,70 @@ El navegador **no habla gRPC**: usa REST con el backend. Por dentro, el backend 
 - Los textos que llegan del servidor se insertan con `textContent`.
 - Los detalles de gRPC están en el README y en `DECISIONES_GRPC.md` del repositorio `smartdj-backend`.
 
+## Sistema de diseño y temas
+
+Todo color, tipografía, espaciado, radio, sombra y duración sale de **tokens** en `:root` (`styles.css`).
+
+**Tipos de token:**
+- **Primitivos:** paleta de marca `--lime-*`, `--olive-*`, `--cream-*`, `--ink-*` y `--amber-400`.
+- **Semánticos:** `--bg`, `--surface`, `--surface-2`, `--surface-inverse`, `--text`, `--text-muted`, `--border`, `--accent`, `--on-accent`, `--accent-text`, `--focus`, `--danger`, `--warning`, `--glass` y `--shadow-*`.
+- **Escalas:** `--text-*`, `--space-*`, `--radius-*`, `--dur*`, `--ease*` y `--tap` (44 px).
+
+Los componentes solo usan tokens semánticos.
+
+**Temas claro y oscuro** en todas las pantallas, incluida la consola de DJ:
+- Por defecto se sigue el sistema (`prefers-color-scheme`).
+- El botón de tema del header (`.theme-toggle`, con etiqueta accesible) guarda la elección en `localStorage` (`smartdj-theme`). Si el almacenamiento no está disponible, se sigue usando el tema del sistema.
+- `theme-init.js` va en el `<head>` y aplica el tema guardado antes de pintar la página, para que no parpadee.
+- Con View Transitions el cambio es un fundido de opacidad.
+
+**Contraste** (WCAG AA, verificado en ambos temas):
+- En modo claro, los botones lima llevan texto oscuro (`--on-accent`) y los acentos de texto usan oliva `#4a5d00`, con 6,5:1 sobre crema; el foco también es oliva.
+- En modo oscuro, el lima sobre tinta da 16,7:1.
+
+**Movimiento:**
+- Solo se animan `transform` y `opacity`.
+- **Animaciones:** aparecer al hacer scroll, parallax del deck, contador de la portada, entrada y salida de listas, esqueletos de carga, vinilos que giran, visualizador de nivel y transición entre vistas.
+- Con `prefers-reduced-motion: reduce` se desactivan.
+
+## Header y navegación
+
+- **Sin sesión:** enlaces de la portada, **Ingresar** y **Crear establecimiento**.
+- **Con sesión:** avatar con iniciales y menú (**Mis locales**, **Consola de DJ**, **Cambiar tema**, **Cerrar sesión**). Se maneja con el teclado: flechas, Inicio, Fin y Escape.
+- La sesión se restaura al cargar la página (`restoreSession()` en `app.js`).
+- **Header:** fijo, con efecto cristal y sombra al hacer scroll, y con el enlace de la sección visible resaltado.
+- **Menú hamburguesa** por debajo de 900 px: diálogo modal con foco atrapado, Escape para cerrar y foco de vuelta al botón.
+
+## Accesibilidad
+
+- **Foco y navegación:** foco visible en todo control (`:focus-visible`), enlace "Saltar al contenido" y orden de tabulación lógico.
+- **Etiquetas:** etiquetas visibles en los formularios, con los errores asociados por `aria-describedby` y `aria-invalid`.
+- **Contraseñas:** botón de mostrar/ocultar (ojo) con `aria-pressed` y una etiqueta que cambia. La fortaleza y los requisitos se actualizan en vivo.
+- **Código de 6 dígitos:** seis casillas con teclado numérico en móvil, autofoco, pegado repartido y retroceso.
+- **Mensajes:** con `role="alert"` o `role="status"` y una animación suave.
+- **Roles ARIA:** `menu`/`menuitem` en la cuenta, `tablist`/`tab`/`tabpanel` en la consola y `dialog` con `aria-modal` en el menú móvil.
+- **Objetivos táctiles:** de al menos 44 px.
+
+**Revisión responsive** (navegador sin cabeza a 320, 360, 768, 900 y 1280 px, en ambos temas). Se corrigió:
+- Los artículos de la portada se encogían a 44 px por un choque de nombres de clase con el botón del ojo.
+- El encabezado de la página pública heredaba los estilos del header del sitio.
+- El texto de "Comparte tu local" cortaba palabras a la mitad.
+- El logo y "Ver demostración" medían menos de 44 px.
+- A 768 px el botón de tema se encogía; por eso el header de escritorio empieza a los 900 px.
+- Ninguna vista tiene scroll horizontal.
+
+## Pruebas
+
+```bash
+node --test "scripts/*.test.mjs"     # pruebas unitarias (sin navegador)
+PLAYWRIGHT_MODULE=<ruta a node_modules/playwright> node scripts/smoke.e2e.mjs   # prueba de humo
+```
+
+- **Pruebas unitarias:** cubren el tema (alternar, guardar y almacenamiento no disponible), la contraseña (fortaleza, requisitos, mostrar/ocultar y confirmación), el header según la sesión, el menú (flechas y foco atrapado), el código de 6 dígitos, la lógica de la consola, las peticiones del cliente y `apiUrl()`.
+- **Prueba de humo:** carga la portada, el menú móvil, el registro, el código, el panel, la consola y la página pública en tema claro y oscuro, a 360 y 1280 px. Falla si hay errores en la consola o scroll horizontal.
+  - Es autocontenida: responde el API con datos de prueba y reemplaza los scripts de CDN y Supabase por dobles locales.
+  - Necesita Playwright, que no es dependencia del proyecto: `npx -y playwright@1.49.1 install chromium`.
+
 ## Docker
 
 ```bash
