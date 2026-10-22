@@ -517,3 +517,13 @@ dialog::backdrop { background: var(--overlay); }
   .vinyl, .platter { animation: none; }
 }
 
+/* ==========================================================================
+   Botón de tema: sol en modo oscuro, luna en modo claro; el cambio gira el ícono (transform y opacidad).
+   ========================================================================== */
+.theme-toggle { position: relative; display: inline-grid; place-items: center; width: var(--tap); height: var(--tap); padding: 0; color: var(--text); background: transparent; border: 1px solid var(--border); border-radius: var(--radius-pill); overflow: hidden; }
+.theme-toggle:hover:not(:disabled) { background: var(--surface-2); }
+.theme-toggle .icon { position: absolute; width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; transition: transform var(--dur-slow) var(--ease-out), opacity var(--dur) var(--ease); }
+.theme-toggle .icon-moon { fill: currentColor; stroke: none; }
+.theme-toggle[data-theme='light'] .icon-sun, .theme-toggle[data-theme='dark'] .icon-moon { opacity: 0; transform: rotate(-90deg) scale(0.5); }
+.theme-toggle[data-theme='light'] .icon-moon, .theme-toggle[data-theme='dark'] .icon-sun { opacity: 1; transform: rotate(0) scale(1); }
+::view-transition-old(root), ::view-transition-new(root) { animation-duration: var(--dur-slow); }
