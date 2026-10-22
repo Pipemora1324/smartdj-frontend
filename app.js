@@ -7,7 +7,15 @@ const API_BASE = window.SMARTDJ_API_URL || 'https://smart-dj-platform.onrender.c
 // no depender de cookies cross-site (Vercel -> Render) que el navegador bloquea.
 function getToken() { return localStorage.getItem('accessToken'); }
 function setToken(token) { if (token) localStorage.setItem('accessToken', token); }
-function clearToken() { localStorage.removeItem('accessToken'); }
+function clearToken() { localStorage.removeItem('accessToken'); if (currentUser) setSessionUser(null); }
+
+// ---------- Sesión del dueño ----------
+// Usuario de la API (/auth/me) o null. ui.js escucha el evento "smartdj:session" para cambiar el header.
+let currentUser = null;
+function setSessionUser(user) {
+  currentUser = user || null;
+  window.dispatchEvent(new CustomEvent('smartdj:session', { detail: currentUser }));
+}
 
 // Construye la URL del backend y verifica que no salga de API_BASE/api/ (evita desviar la petición
 // a otro origen con rutas como "//otro-host" o "../").
@@ -116,6 +124,7 @@ async function openSession(session) {
   let user;
   try { user = await api('/auth/me'); }
   catch (err) { await supabaseClient.auth.signOut({ scope: 'local' }).catch(() => {}); clearToken(); throw err; }
+  setSessionUser(user);
   await showDashboard(user);
 }
 // supabase-js renueva el token antes de que venza: mantenemos al día la copia que envía api().
@@ -432,14 +441,33 @@ async function showDashboard(user, { selectId } = {}) {
     main.replaceChildren(el('h2', { text: 'Nuevo local' }), el('p', { text: 'Registra un local para activar el DJ inteligente.' }),
       venueForm(null, async (data) => { const created = await api('/venues', { method: 'POST', body: JSON.stringify(data) }); venues.unshift(created); select(created.id); }));
   };
-  const logout = async () => { stopPanelPoll(); if (supabaseClient) await supabaseClient.auth.signOut().catch(() => {}); clearToken(); showLanding(); };
+  const logout = signOut;
   renderSidebar();
   renderMain();
   showView(el('div', { class: 'panel' },
     el('div', { class: 'panel-bar' }, el('h1', { text: `Hola, ${user.name}` }), el('button', { type: 'button', id: 'logoutBtn', class: 'switch', text: 'Cerrar sesión', onclick: logout })),
     el('div', { class: 'panel-body' }, sidebar, main)));
 }
-document.querySelector('#openLogin').onclick=()=>{authForm();dialog.showModal()};document.querySelector('#openRegister').onclick=document.querySelector('#heroStart').onclick=()=>{authForm('register');dialog.showModal()};document.querySelector('#closeDialog').onclick=()=>dialog.close();
+// Cerrar sesión desde el panel o desde el menú de la cuenta del header.
+async function signOut() {
+  stopPanelPoll();
+  if (typeof closeConsole === 'function') closeConsole();
+  if (supabaseClient) await supabaseClient.auth.signOut().catch(() => {});
+  clearToken();
+  setSessionUser(null);
+  showLanding();
+}
+// Abrir el login o el registro en el diálogo (el header y la portada lo usan).
+function openAuth(mode = 'login') { authForm(mode); if (!dialog.open) dialog.showModal(); }
+// "Consola de DJ" del menú de la cuenta: con un solo local abre su consola; si no, el panel para elegir o crear uno.
+async function openOwnerConsole() {
+  if (!currentUser) return openAuth('login');
+  let venues = [];
+  try { venues = await api('/venues'); } catch { return showDashboard(currentUser); }
+  if (venues.length !== 1) return showDashboard(currentUser);
+  showConsole(venues[0], { onBack: () => showDashboard(currentUser, { selectId: venues[0].id }) });
+}
+document.querySelector('#heroStart').onclick=()=>openAuth('register');document.querySelector('#closeDialog').onclick=()=>dialog.close();
 document.querySelector('#mixButton').onclick=()=>{const st=document.querySelector('#mixStatus');st.textContent='Puente armónico generado · mezclando…';document.querySelectorAll('.platter').forEach(p=>p.style.animationDuration='2s');setTimeout(()=>{st.textContent='Transición completada · 94% match';document.querySelectorAll('.platter').forEach(p=>p.style.animationDuration='8s')},1800)};
 document.querySelector('#crossfade').oninput=e=>document.querySelector('.deck').style.filter=`brightness(${.8+e.target.value/500})`;
 // ---------- Estado en vivo de una petición ----------
@@ -685,3 +713,16 @@ async function publicRequest(code) {
   document.querySelector('.venue-page input[type=search]')?.focus();
 }
 const publicCode=new URLSearchParams(location.search).get('venue');if(publicCode) void publicRequest(publicCode);
+// Al cargar: si hay una sesión de Supabase guardada, el header muestra la cuenta (el panel se abre desde el menú).
+async function restoreSession() {
+  if (!supabaseClient?.auth.getSession) return;
+  try {
+    const { data } = await supabaseClient.auth.getSession();
+    if (!data?.session?.access_token) return;
+    setToken(data.session.access_token);
+    setSessionUser(await api('/auth/me'));
+  } catch {
+    // Sesión vencida o sin conexión: el header sigue como visitante.
+  }
+}
+void restoreSession();
