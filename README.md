@@ -181,9 +181,14 @@ Los componentes solo usan tokens semánticos.
 ## Pruebas
 
 ```bash
-node --test "scripts/*.test.mjs"     # pruebas unitarias (sin navegador)
+npm install                          # solo herramientas de desarrollo; el sitio no tiene build
+npm test                             # pruebas unitarias (sin navegador)
+npm run lint                         # ESLint; los globales compartidos entre scripts se leen de los propios archivos
+npm run format                       # Prettier (index.html y los .md quedan fuera, ver .prettierignore)
 PLAYWRIGHT_MODULE=<ruta a node_modules/playwright> node scripts/smoke.e2e.mjs   # prueba de humo
 ```
+
+- `package.json` solo existe para estas herramientas. `.vercelignore` lo deja fuera del despliegue, así Vercel sigue publicando el sitio estático sin instalar nada.
 
 - **Pruebas unitarias:** cubren el tema (alternar, guardar y almacenamiento no disponible), la contraseña (fortaleza, requisitos, mostrar/ocultar y confirmación), el header según la sesión, el menú (flechas y foco atrapado), el código de 6 dígitos, la lógica de la consola, las peticiones del cliente y `apiUrl()`.
 - **Prueba de humo:** carga la portada, el menú móvil, el registro, el código, el panel, la consola y la página pública en tema claro y oscuro, a 360 y 1280 px. Falla si hay errores en la consola o scroll horizontal.
