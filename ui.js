@@ -338,3 +338,92 @@ function otpInput(onComplete) {
   group.focus = () => (boxes.find((b) => !b.value) || boxes[0]).focus();
   return group;
 }
+
+// ---------- Estados de carga y vacíos ----------
+// Esqueleto del panel mientras llegan los locales (aria-busy y texto para lectores de pantalla).
+function panelSkeleton(user) {
+  const bar = (cls) => el('span', { class: `skeleton ${cls}` });
+  return el('div', { class: 'panel', 'aria-busy': 'true' },
+    el('div', { class: 'panel-bar' }, el('h1', { text: user?.name ? `Hola, ${user.name}` : 'Tu panel' })),
+    el('p', { class: 'sr-only', role: 'status', text: 'Cargando tus locales…' }),
+    el('div', { class: 'panel-body', 'aria-hidden': 'true' },
+      el('div', { class: 'venue-list' }, bar('sk-title'), bar('sk-card'), bar('sk-card'), bar('sk-button')),
+      el('div', { class: 'panel-main' }, bar('sk-heading'), bar('sk-line'), bar('sk-line short'), bar('sk-block'))));
+}
+function emptyState(title, text) {
+  return el('div', { class: 'empty-state' },
+    el('span', { class: 'empty-icon', 'aria-hidden': 'true', text: '♫' }),
+    el('strong', { text: title }),
+    el('p', { text }));
+}
+
+// ---------- Listas con entrada y salida suaves ----------
+// Reutiliza los elementos por clave: los nuevos entran con animación y los que salen se desvanecen antes de quitarse.
+const LEAVE_MS = 260;
+function animateList(list, items, keyOf, render) {
+  const existing = new Map([...list.children].filter((n) => !n.classList.contains('leaving')).map((n) => [n.dataset.key, n]));
+  const nodes = items.map((item) => {
+    const key = String(keyOf(item));
+    const node = render(item);
+    node.dataset.key = key;
+    if (!existing.has(key)) node.classList.add('entering');
+    existing.delete(key);
+    return node;
+  });
+  const leaving = [...existing.values()];
+  if (prefersReducedMotion()) { list.replaceChildren(...nodes); return; }
+  for (const node of leaving) node.classList.add('leaving');
+  list.replaceChildren(...nodes, ...leaving);
+  if (leaving.length) setTimeout(() => leaving.forEach((n) => n.remove()), LEAVE_MS);
+}
+
+// ---------- Landing: aparecer al hacer scroll, parallax suave y contadores ----------
+function setupLandingMotion() {
+  const root = document.documentElement;
+  if (prefersReducedMotion() || !('IntersectionObserver' in window)) return;
+  root.classList.add('motion-ok');
+  const targets = document.querySelectorAll('.how h2, .how .eyebrow, .steps article, .roles > div > *, .role-grid article');
+  targets.forEach((node, i) => { node.classList.add('scroll-reveal'); node.style.setProperty('--reveal-delay', `${(i % 3) * 90}ms`); });
+  const reveal = new IntersectionObserver((entries) => {
+    for (const entry of entries) {
+      if (!entry.isIntersecting) continue;
+      entry.target.classList.add('is-visible');
+      reveal.unobserve(entry.target);
+    }
+  }, { threshold: 0.15 });
+  targets.forEach((node) => reveal.observe(node));
+
+  // Contador: los números de las métricas suben desde 0 la primera vez que se ven.
+  const counters = document.querySelectorAll('[data-count]');
+  const countUp = new IntersectionObserver((entries) => {
+    for (const entry of entries) {
+      if (!entry.isIntersecting) continue;
+      countUp.unobserve(entry.target);
+      const node = entry.target;
+      const target = Number(node.dataset.count);
+      const suffix = node.dataset.suffix || '';
+      const start = performance.now();
+      const step = (now) => {
+        const t = Math.min(1, (now - start) / 900);
+        node.textContent = `${Math.round(target * (1 - (1 - t) ** 3))}${suffix}`;
+        if (t < 1) requestAnimationFrame(step);
+      };
+      requestAnimationFrame(step);
+    }
+  });
+  counters.forEach((node) => countUp.observe(node));
+
+  // Parallax del deck de la portada: solo transform, una actualización por frame y solo si la portada se ve.
+  const deck = document.querySelector('.hero .deck');
+  if (!deck) return;
+  let ticking = false;
+  window.addEventListener('scroll', () => {
+    if (ticking || document.querySelector('#inicio')?.hidden) return;
+    ticking = true;
+    requestAnimationFrame(() => {
+      deck.style.setProperty('--parallax', `${Math.min(window.scrollY, 600) * -0.08}px`);
+      ticking = false;
+    });
+  }, { passive: true });
+}
+setupLandingMotion();
