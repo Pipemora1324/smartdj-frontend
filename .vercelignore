@@ -1,0 +1,12 @@
+# El sitio es estático: Vercel solo publica los archivos de la página. Las herramientas de desarrollo
+# (pruebas, lint, formato) no se suben, así Vercel no instala dependencias ni expone la configuración.
+node_modules
+package.json
+package-lock.json
+eslint.config.mjs
+.prettierrc.json
+.prettierignore
+scripts
+Dockerfile
+*.md
+.claude
