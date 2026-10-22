@@ -21,6 +21,9 @@ Frontend estático de SmartDJ (HTML, CSS y JavaScript nativo, sin build). Lo usa
   - La rampa del crossfade se programa en los `AudioParam`, no con temporizadores.
   - El `Dockerfile` debe copiar `console-core.js` y `dj-console.js`.
 - **Página pública:** sin audio. Se actualiza por SSE (`/public/venues/:code/events`), con polling de respaldo.
+- **Panel del dueño:** solo gestión del local (datos, QR, link y editar). Las peticiones y la música van en la consola (pestañas Cola, Peticiones y Buscar).
+- **Consola accesible:** pestañas con `role=tab` y flechas, `aria-label` o `<label>` en todos los controles, `:focus-visible` y `prefers-reduced-motion`. Los avisos se borran solos (`say()`).
+- **Origen de las pistas:** usa `kindBadge()` para "Completa" o "Preview 30 s".
 
 ## Reglas fijas
 
