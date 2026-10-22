@@ -13,7 +13,10 @@ const apiUrlFor = (base) => vm.runInNewContext(`${fn[0]}; apiUrl`, { API_BASE: b
 test('arma URLs dentro de API_BASE/api/', () => {
   const apiUrl = apiUrlFor('https://smart-dj-platform.onrender.com');
   assert.equal(apiUrl('/public/venues/abc'), 'https://smart-dj-platform.onrender.com/api/public/venues/abc');
-  assert.equal(apiUrl(`/public/venues/${encodeURIComponent('a/../b')}/search?q=x`), 'https://smart-dj-platform.onrender.com/api/public/venues/a%2F..%2Fb/search?q=x');
+  assert.equal(
+    apiUrl(`/public/venues/${encodeURIComponent('a/../b')}/search?q=x`),
+    'https://smart-dj-platform.onrender.com/api/public/venues/a%2F..%2Fb/search?q=x',
+  );
 });
 
 test('rechaza rutas que intentan salir del backend', () => {

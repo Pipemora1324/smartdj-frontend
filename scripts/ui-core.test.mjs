@@ -12,7 +12,14 @@ const memoryStorage = () => {
   const data = new Map();
   return { getItem: (k) => (data.has(k) ? data.get(k) : null), setItem: (k, v) => data.set(k, String(v)) };
 };
-const blockedStorage = { getItem: () => { throw new Error('bloqueado'); }, setItem: () => { throw new Error('bloqueado'); } };
+const blockedStorage = {
+  getItem: () => {
+    throw new Error('bloqueado');
+  },
+  setItem: () => {
+    throw new Error('bloqueado');
+  },
+};
 
 test('el tema sigue al sistema hasta que el usuario elige', () => {
   assert.equal(ui.resolveTheme(null, true), 'dark');

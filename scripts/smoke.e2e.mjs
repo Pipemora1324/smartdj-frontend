@@ -23,7 +23,9 @@ async function loadBrowser() {
     try {
       const mod = createRequire(join(root, 'package.json'))(name);
       return { chromium: mod.chromium, patchright: /patchright/.test(name) };
-    } catch { /* se prueba el siguiente */ }
+    } catch {
+      /* se prueba el siguiente */
+    }
   }
   console.error('No se encontró Playwright. Instálalo con "npx -y playwright@1.49.1 install chromium" y define PLAYWRIGHT_MODULE.');
   process.exit(2);
@@ -42,12 +44,21 @@ function serveSite() {
       let path = decodeURIComponent(new URL(req.url, 'http://x').pathname);
       if (path === '/') path = '/index.html';
       const file = normalize(join(root, path));
-      if (!file.startsWith(root)) { res.writeHead(403).end(); return; }
+      if (!file.startsWith(root)) {
+        res.writeHead(403).end();
+        return;
+      }
       let body = await readFile(file, 'utf8');
       if (path === '/index.html') {
         body = body
-          .replace(/<script src="https:\/\/cdn\.jsdelivr\.net\/npm\/@supabase\/[^"]+"[^>]*><\/script>/, `<script>${SUPABASE_DOUBLE}</script>`)
-          .replace(/<script src="https:\/\/cdnjs\.cloudflare\.com\/ajax\/libs\/qrcode-generator\/[^"]+"[^>]*><\/script>/, `<script>${QR_DOUBLE}</script>`);
+          .replace(
+            /<script src="https:\/\/cdn\.jsdelivr\.net\/npm\/@supabase\/[^"]+"[^>]*><\/script>/,
+            `<script>${SUPABASE_DOUBLE}</script>`,
+          )
+          .replace(
+            /<script src="https:\/\/cdnjs\.cloudflare\.com\/ajax\/libs\/qrcode-generator\/[^"]+"[^>]*><\/script>/,
+            `<script>${QR_DOUBLE}</script>`,
+          );
       }
       res.writeHead(200, { 'Content-Type': types[extname(file)] || 'application/octet-stream' });
       res.end(body);
@@ -60,15 +71,74 @@ function serveSite() {
 
 // ---------- API de prueba ----------
 const user = { id: 'u1', name: 'Ana Prueba', email: 'ana@prueba.co' };
-const venue = { id: '11111111-1111-4111-8111-111111111111', name: 'Café Prueba', kind: 'cafe', ambience: 'Jazz y lounge', public_code: 'abc123', exclude_non_commercial: false };
+const venue = {
+  id: '11111111-1111-4111-8111-111111111111',
+  name: 'Café Prueba',
+  kind: 'cafe',
+  ambience: 'Jazz y lounge',
+  public_code: 'abc123',
+  exclude_non_commercial: false,
+};
 const track = (n, kind = 'full') => ({
-  id: `t${n}`, provider: kind === 'full' ? 'jamendo' : 'itunes', externalId: String(n), title: `Tema ${n}`, artist: `Artista ${n}`, genre: 'lounge',
-  durationSeconds: 180, artworkUrl: null, energy: 3, bpm: 0, musicalKey: '', kind, kindLabel: kind === 'full' ? 'Completa' : 'Preview 30 s', waveform: [0.2, 0.6, 0.4],
-  credit: { artist: `Artista ${n}`, title: `Tema ${n}`, url: 'https://www.jamendo.com/track/1', source: 'Jamendo', license: 'CC BY 4.0', licenseUrl: 'https://creativecommons.org/licenses/by/4.0/', nonCommercial: false },
+  id: `t${n}`,
+  provider: kind === 'full' ? 'jamendo' : 'itunes',
+  externalId: String(n),
+  title: `Tema ${n}`,
+  artist: `Artista ${n}`,
+  genre: 'lounge',
+  durationSeconds: 180,
+  artworkUrl: null,
+  energy: 3,
+  bpm: 0,
+  musicalKey: '',
+  kind,
+  kindLabel: kind === 'full' ? 'Completa' : 'Preview 30 s',
+  waveform: [0.2, 0.6, 0.4],
+  credit: {
+    artist: `Artista ${n}`,
+    title: `Tema ${n}`,
+    url: 'https://www.jamendo.com/track/1',
+    source: 'Jamendo',
+    license: 'CC BY 4.0',
+    licenseUrl: 'https://creativecommons.org/licenses/by/4.0/',
+    nonCommercial: false,
+  },
 });
-const snapshot = { status: 'stopped', mode: 'autodj', volume: 80, crossfadeSeconds: 8, positionSeconds: 0, current: null, consoleId: null,
-  queue: [1, 2].map((n) => ({ id: `q${n}`, position: n, source: 'autodj', requestId: null, score: 80, reason: 'Encaja con el local.', transitionAtSeconds: 170, crossfadeSeconds: 8, track: track(n) })) };
-const request = { id: 'r1', title: 'Tema 9', artist: 'Artista 9', genre: 'Salsa', artworkUrl: null, kind: 'preview', kindLabel: 'Preview 30 s', state: 'bridging', stateLabel: 'El DJ la revisará', fits: false, reason: null, createdAt: new Date().toISOString(), guestName: 'Leo' };
+const snapshot = {
+  status: 'stopped',
+  mode: 'autodj',
+  volume: 80,
+  crossfadeSeconds: 8,
+  positionSeconds: 0,
+  current: null,
+  consoleId: null,
+  queue: [1, 2].map((n) => ({
+    id: `q${n}`,
+    position: n,
+    source: 'autodj',
+    requestId: null,
+    score: 80,
+    reason: 'Encaja con el local.',
+    transitionAtSeconds: 170,
+    crossfadeSeconds: 8,
+    track: track(n),
+  })),
+};
+const request = {
+  id: 'r1',
+  title: 'Tema 9',
+  artist: 'Artista 9',
+  genre: 'Salsa',
+  artworkUrl: null,
+  kind: 'preview',
+  kindLabel: 'Preview 30 s',
+  state: 'bridging',
+  stateLabel: 'El DJ la revisará',
+  fits: false,
+  reason: null,
+  createdAt: new Date().toISOString(),
+  guestName: 'Leo',
+};
 function apiResponse(url) {
   const { pathname } = new URL(url);
   const routes = [
@@ -77,31 +147,82 @@ function apiResponse(url) {
     [/^\/api\/venues\/[^/]+\/player\/requests$/, { requests: [request] }],
     [/^\/api\/venues\/[^/]+\/player$/, snapshot],
     [/^\/api\/venues\/[^/]+\/tracks\/search$/, { tracks: [track(3)], source: 'cache' }],
-    [/^\/api\/public\/venues\/abc123$/, { id: venue.id, name: venue.name, kind: venue.kind, ambience: venue.ambience, public_code: venue.public_code }],
-    [/^\/api\/public\/venues\/abc123\/now$/, { station: { status: 'playing', mode: 'autodj' }, nowPlaying: { ...track(1), previewUrl: null, source: 'autodj' }, queue: [track(2), track(4, 'preview')] }],
-    [/^\/api\/public\/venues\/abc123\/search$/, [{ ...track(5), source: 'jamendo' }, { ...track(6, 'preview'), source: 'itunes', trackId: '6' }]],
+    [
+      /^\/api\/public\/venues\/abc123$/,
+      { id: venue.id, name: venue.name, kind: venue.kind, ambience: venue.ambience, public_code: venue.public_code },
+    ],
+    [
+      /^\/api\/public\/venues\/abc123\/now$/,
+      {
+        station: { status: 'playing', mode: 'autodj' },
+        nowPlaying: { ...track(1), previewUrl: null, source: 'autodj' },
+        queue: [track(2), track(4, 'preview')],
+      },
+    ],
+    [
+      /^\/api\/public\/venues\/abc123\/search$/,
+      [
+        { ...track(5), source: 'jamendo' },
+        { ...track(6, 'preview'), source: 'itunes', trackId: '6' },
+      ],
+    ],
     [/^\/api\/public\/venues\/abc123\/requests$/, { requests: [] }],
   ];
   const match = routes.find(([pattern]) => pattern.test(pathname));
-  return match ? { status: 200, body: JSON.stringify(match[1]) } : { status: 404, body: JSON.stringify({ error: 'No existe en la prueba de humo' }) };
+  return match
+    ? { status: 200, body: JSON.stringify(match[1]) }
+    : { status: 404, body: JSON.stringify({ error: 'No existe en la prueba de humo' }) };
 }
 
 // ---------- Vistas ----------
 const VIEWS = [
   ['portada', async () => {}, '.hero h1'],
-  ['menú móvil', async (page) => { if (await page.locator('.burger').isVisible()) await page.locator('.burger').click(); }, '.hero h1'],
+  [
+    'menú móvil',
+    async (page) => {
+      if (await page.locator('.burger').isVisible()) await page.locator('.burger').click();
+    },
+    '.hero h1',
+  ],
   ['registro', async (page, ev) => ev(() => openAuth('register')), 'dialog[open] #authForm'],
-  ['código', async (page, ev) => ev(() => { openAuth('login'); verifyStep('ana@prueba.co'); }), 'dialog[open] .otp'],
-  ['panel', async (page, ev) => ev(async () => { setSessionUser(await api('/auth/me')); await showDashboard(currentUser); }), '.panel .venue-item'],
-  ['consola', async (page, ev) => {
-    await ev(async () => { const venues = await api('/venues'); showConsole(venues[0], {}); });
-    // Los controles quedan bajo la capa "Iniciar emisora" (autoplay); las pestañas sí se pueden usar.
-    await page.locator('#tab-requests').click();
-  }, '.dj-console .request-item'],
-  ['página pública', async (page) => {
-    await page.goto(`${page.baseUrl}/?venue=abc123`);
-    await page.locator('input[type=search]').fill('tema');
-  }, '.results li'],
+  [
+    'código',
+    async (page, ev) =>
+      ev(() => {
+        openAuth('login');
+        verifyStep('ana@prueba.co');
+      }),
+    'dialog[open] .otp',
+  ],
+  [
+    'panel',
+    async (page, ev) =>
+      ev(async () => {
+        setSessionUser(await api('/auth/me'));
+        await showDashboard(currentUser);
+      }),
+    '.panel .venue-item',
+  ],
+  [
+    'consola',
+    async (page, ev) => {
+      await ev(async () => {
+        const venues = await api('/venues');
+        showConsole(venues[0], {});
+      });
+      // Los controles quedan bajo la capa "Iniciar emisora" (autoplay); las pestañas sí se pueden usar.
+      await page.locator('#tab-requests').click();
+    },
+    '.dj-console .request-item',
+  ],
+  [
+    'página pública',
+    async (page) => {
+      await page.goto(`${page.baseUrl}/?venue=abc123`);
+      await page.locator('input[type=search]').fill('tema');
+    },
+    '.results li',
+  ],
 ];
 
 async function main() {
@@ -115,14 +236,18 @@ async function main() {
   for (const theme of ['light', 'dark']) {
     for (const width of [360, 1280]) {
       const context = await browser.newContext({ viewport: { width, height: 860 }, colorScheme: theme });
-      await context.addInitScript(({ t, api }) => {
-        localStorage.setItem('smartdj-theme', t);
-        window.SMARTDJ_API_URL = api;
-        window.SMARTDJ_SUPABASE_URL = 'http://supabase.smoke.invalid';
-      }, { t: theme, api: API });
+      await context.addInitScript(
+        ({ t, api }) => {
+          localStorage.setItem('smartdj-theme', t);
+          window.SMARTDJ_API_URL = api;
+          window.SMARTDJ_SUPABASE_URL = 'http://supabase.smoke.invalid';
+        },
+        { t: theme, api: API },
+      );
       await context.route(`${API}/**`, (route) => {
         const { status, body } = apiResponse(route.request().url());
-        if (/\/events$/.test(route.request().url())) return route.fulfill({ status: 200, contentType: 'text/event-stream', body: 'event: ready\ndata: {}\n\n' });
+        if (/\/events$/.test(route.request().url()))
+          return route.fulfill({ status: 200, contentType: 'text/event-stream', body: 'event: ready\ndata: {}\n\n' });
         return route.fulfill({ status, contentType: 'application/json', body });
       });
       await context.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.fulfill({ status: 200, contentType: 'text/css', body: '' }));
@@ -132,7 +257,9 @@ async function main() {
         const ev = (fn, arg) => (patchright ? page.evaluate(fn, arg, undefined, false) : page.evaluate(fn, arg));
         const errors = [];
         page.on('pageerror', (e) => errors.push(e.message));
-        page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+        page.on('console', (m) => {
+          if (m.type() === 'error') errors.push(m.text());
+        });
         const label = `${name} · ${theme} · ${width}px`;
         try {
           await page.goto(baseUrl);
@@ -140,7 +267,10 @@ async function main() {
           await open(page, ev);
           await page.locator(selector).first().waitFor({ timeout: 10000 });
           await page.waitForTimeout(400);
-          const state = await page.evaluate(() => ({ overflow: document.documentElement.scrollWidth > window.innerWidth + 1, theme: document.documentElement.getAttribute('data-theme') }));
+          const state = await page.evaluate(() => ({
+            overflow: document.documentElement.scrollWidth > window.innerWidth + 1,
+            theme: document.documentElement.getAttribute('data-theme'),
+          }));
           if (state.overflow) errors.push('scroll horizontal');
           if (state.theme !== theme) errors.push(`tema ${state.theme} en lugar de ${theme}`);
         } catch (err) {
@@ -157,7 +287,10 @@ async function main() {
   await browser.close();
   server.close();
   console.log(`\n${checked - failures.length}/${checked} vistas sin errores.`);
-  if (failures.length) { console.error(failures.join('\n')); process.exit(1); }
+  if (failures.length) {
+    console.error(failures.join('\n'));
+    process.exit(1);
+  }
 }
 
 await main();

@@ -8,7 +8,8 @@ const source = readFileSync(new URL('../app.js', import.meta.url), 'utf8');
 const start = source.indexOf('const MY_REQUESTS_MAX');
 const end = source.indexOf('function nowPlayingCard');
 assert.ok(start > 0 && end > start, 'las funciones de peticiones propias deben existir en app.js');
-const load = (localStorage) => vm.runInNewContext(`${source.slice(start, end)}; ({ loadMyRequests, rememberRequest })`, { localStorage, JSON, Array });
+const load = (localStorage) =>
+  vm.runInNewContext(`${source.slice(start, end)}; ({ loadMyRequests, rememberRequest })`, { localStorage, JSON, Array });
 
 const memoryStorage = () => {
   const data = new Map();
@@ -35,7 +36,14 @@ test('conserva como mucho 10 peticiones', () => {
 });
 
 test('sin almacenamiento o con datos dañados no falla', () => {
-  const broken = { getItem: () => { throw new Error('bloqueado'); }, setItem: () => { throw new Error('bloqueado'); } };
+  const broken = {
+    getItem: () => {
+      throw new Error('bloqueado');
+    },
+    setItem: () => {
+      throw new Error('bloqueado');
+    },
+  };
   const { loadMyRequests, rememberRequest } = load(broken);
   assert.doesNotThrow(() => rememberRequest('abc', 'r1'));
   assert.deepEqual([...loadMyRequests('abc')], []);

@@ -4,7 +4,16 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 
-const context = { window: { crypto: { getRandomValues: (a) => globalThis.crypto.getRandomValues(a) } }, Math, Number, Array, Float32Array, Uint8Array, String, Date };
+const context = {
+  window: { crypto: { getRandomValues: (a) => globalThis.crypto.getRandomValues(a) } },
+  Math,
+  Number,
+  Array,
+  Float32Array,
+  Uint8Array,
+  String,
+  Date,
+};
 vm.runInNewContext(readFileSync(new URL('../console-core.js', import.meta.url), 'utf8'), context);
 const core = context.window.SmartDJConsole;
 const close = (a, b) => Math.abs(a - b) < 1e-9;
@@ -13,7 +22,10 @@ test('el crossfader mantiene la potencia constante', () => {
   assert.deepEqual({ ...core.equalPowerGains(0) }, { a: 1, b: 0 });
   const mid = core.equalPowerGains(0.5);
   assert.ok(close(mid.a, Math.SQRT1_2) && close(mid.b, Math.SQRT1_2));
-  for (const x of [0, 0.2, 0.7, 1]) { const g = core.equalPowerGains(x); assert.ok(close(g.a ** 2 + g.b ** 2, 1)); }
+  for (const x of [0, 0.2, 0.7, 1]) {
+    const g = core.equalPowerGains(x);
+    assert.ok(close(g.a ** 2 + g.b ** 2, 1));
+  }
   assert.equal(core.equalPowerGains(5).b, 1);
   assert.equal(core.equalPowerGains('x').a, 1);
 });
