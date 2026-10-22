@@ -25,6 +25,20 @@ Frontend estático de SmartDJ (HTML, CSS y JavaScript nativo, sin build). Lo usa
 - **Consola accesible:** pestañas con `role=tab` y flechas, `aria-label` o `<label>` en todos los controles, `:focus-visible` y `prefers-reduced-motion`. Los avisos se borran solos (`say()`).
 - **Origen de las pistas:** usa `kindBadge()` para "Completa" o "Preview 30 s".
 
+## Sistema de diseño (pulido del frontend)
+
+- **Archivos:**
+  - `theme-init.js` va en el `<head>`, sin `defer`, y aplica el tema guardado.
+  - `ui-core.js` tiene la lógica pura (tema, contraseña, header, menú y código) y sus pruebas.
+  - `ui.js` tiene los componentes: botón de tema, header con sesión, menú móvil, campos de contraseña y código, esqueletos, `animateList()` y animaciones de la portada.
+  - Orden de carga: `ui-core.js` → `app.js` → `ui.js` → `console-core.js` → `dj-console.js`. El `Dockerfile` debe copiar todos.
+- **Estilos:** solo tokens semánticos (`--surface`, `--text`, `--accent-text`…); nunca colores sueltos en los componentes. Todo debe verse bien en ambos temas.
+- **Lima y contraste:** el lima solo como fondo, con `--on-accent` encima; para texto de acento usa `--accent-text`, que es oliva en modo claro.
+- **Animaciones:** solo `transform` y `opacity`, siempre respetando `prefers-reduced-motion`.
+- **Objetivos táctiles:** mínimo `--tap` (44 px).
+- **Sesión:** `setSessionUser()` dispara `smartdj:session` y el header se vuelve a pintar. Cierra sesión siempre con `signOut()`.
+- **Pruebas:** `node --test "scripts/*.test.mjs"`. La prueba de humo `scripts/smoke.e2e.mjs` usa datos de prueba, nunca el backend real ni Supabase.
+
 ## Reglas fijas
 
 - **Idioma del código:** todo en inglés: variables, funciones, archivos, rutas, tablas y columnas nuevas.
