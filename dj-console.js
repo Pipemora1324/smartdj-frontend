@@ -12,6 +12,7 @@ const WAVE_BARS = 120;
 const REQUESTS_POLL_MS = 20000;
 const LIVE_THROTTLE_MS = 1500;
 const NOTICE_MS = 6000;
+const METER_BARS = 16;
 let activeConsole = null;
 const STATUS_LABELS = { playing: 'Al aire', paused: 'En pausa', stopped: 'Apagada' };
 
@@ -109,6 +110,9 @@ function showConsole(venue, { onBack } = {}) {
   const requestsList = el('ul', { class: 'console-requests' });
   const requestsHint = el('p', { class: 'notice-dark', text: 'Cargando peticiones…' });
   const requestsCount = el('span', { class: 'tab-count', hidden: '' });
+  // Visualizador de nivel: barras que siguen el audio real (AnalyserNode del volumen maestro).
+  const levelMeter = el('div', { class: 'level-meter', 'aria-hidden': 'true' }, ...Array.from({ length: METER_BARS }, () => el('span')));
+  const meterBars = [...levelMeter.children];
   const startOverlay = el('div', { class: 'console-start' });
   const lostOverlay = el('div', { class: 'console-start', hidden: '' });
 
@@ -130,6 +134,8 @@ function showConsole(venue, { onBack } = {}) {
       eq: {},
     };
     view.disc.append(view.cover);
+    // El contenedor no gira: lleva el brillo y el halo; solo el disco rota.
+    view.discWrap = el('div', { class: 'vinyl-wrap' }, view.disc);
     const eqRow = (band, label) => {
       const id = `eq${name}${band}`;
       const input = el('input', { type: 'range', min: String(DJ.EQ_MIN_DB), max: String(DJ.EQ_MAX_DB), step: '1', value: '0', id });
@@ -138,7 +144,7 @@ function showConsole(venue, { onBack } = {}) {
       return el('div', { class: 'eq-row' }, el('label', { for: id, text: label }), input, kill);
     };
     view.root = el('section', { class: `deck-card deck-${name.toLowerCase()}`, 'aria-label': `Deck ${name}` },
-      view.disc,
+      view.discWrap,
       el('div', { class: 'deck-meta' },
         el('div', { class: 'deck-label' }, el('b', { text: `DECK ${name}` }), view.badge),
         view.title, view.artist,
@@ -207,7 +213,7 @@ function showConsole(venue, { onBack } = {}) {
       startOverlay, lostOverlay,
       el('div', { class: 'decks' }, views[0].root, views[1].root),
       el('div', { class: 'main-controls' },
-        playButton, skipButton,
+        playButton, skipButton, levelMeter,
         el('div', { class: 'master' }, el('label', { for: 'masterVolume', text: 'Volumen' }), masterVolume),
         el('div', { class: 'mode-switch', role: 'group', 'aria-label': 'Modo de la emisora' }, modeButtons.autodj, modeButtons.manual),
         advancedButton),
@@ -445,7 +451,9 @@ function showConsole(venue, { onBack } = {}) {
     view.cover.replaceWith(cover);
     view.cover = cover;
     // El vinilo gira solo mientras su pista suena.
-    view.disc.classList.toggle('spinning', Boolean(item) && !deck.audio().paused);
+    const spinning = Boolean(item) && !deck.audio().paused;
+    view.disc.classList.toggle('spinning', spinning);
+    view.discWrap.classList.toggle('spinning', spinning);
     view.play.textContent = deck.audio().paused ? '▶' : '❚❚';
     view.play.disabled = !item || c.snapshot?.mode !== 'manual';
     drawDeck(deck);
@@ -467,7 +475,7 @@ function showConsole(venue, { onBack } = {}) {
     const bars = DJ.waveformBars(deck.item?.track?.waveform, WAVE_BARS);
     const step = width / bars.length;
     const progress = duration ? now / duration : 0;
-    deck.view.progress.style.width = `${Math.min(100, progress * 100)}%`;
+    deck.view.progress.style.transform = `scaleX(${Math.min(1, progress)})`;
     bars.forEach((v, i) => {
       g.fillStyle = i / bars.length < progress ? '#c6ff00' : '#3b3b36';
       const h = Math.max(2, v * height);
@@ -549,11 +557,35 @@ function showConsole(venue, { onBack } = {}) {
     return el('section', { class: 'catalog-panel' }, el('h2', { class: 'sr-only', text: 'Buscar en el catálogo' }), input, hint, list);
   }
 
+  // Bucle del visualizador: solo mientras suena, la pestaña se ve y no se pidió reducir el movimiento.
+  // Si la pista suena sin Web Audio (respaldo sin CORS) el analizador no recibe datos y las barras se animan solas.
+  const meterData = new Uint8Array(32);
+  const meterLoop = () => {
+    if (!c.playing || c.closed) { c.meterFrame = null; return; }
+    if (!document.hidden && c.analyser) {
+      c.analyser.getByteFrequencyData(meterData);
+      let total = 0;
+      meterBars.forEach((bar, i) => {
+        const value = meterData[Math.floor((i * meterData.length) / METER_BARS)] / 255;
+        total += value;
+        bar.style.transform = `scaleY(${Math.max(0.08, value)})`;
+      });
+      levelMeter.classList.toggle('simulated', total === 0);
+    }
+    c.meterFrame = requestAnimationFrame(meterLoop);
+  };
+  const updateMeter = () => {
+    levelMeter.classList.toggle('active', c.playing);
+    playButton.parentElement?.classList.toggle('is-playing', c.playing);
+    if (c.playing && !c.meterFrame && !prefersReducedMotion()) c.meterFrame = requestAnimationFrame(meterLoop);
+    if (!c.playing) meterBars.forEach((bar) => { bar.style.transform = ''; });
+  };
   const setPlaying = (value) => {
     c.playing = value;
     playButton.textContent = value ? '❚❚' : '▶';
     playButton.setAttribute('aria-label', value ? 'Pausar' : 'Reproducir');
     renderDecks();
+    updateMeter();
   };
 
   playButton.addEventListener('click', async () => {
@@ -691,6 +723,10 @@ function showConsole(venue, { onBack } = {}) {
         c.ctx = new (window.AudioContext || window.webkitAudioContext)();
         c.master = c.ctx.createGain();
         c.master.connect(c.ctx.destination);
+        c.analyser = c.ctx.createAnalyser();
+        c.analyser.fftSize = 64;
+        c.analyser.smoothingTimeConstant = 0.75;
+        c.master.connect(c.analyser);
         c.decks = [createDeck('A', c.ctx, c.master), createDeck('B', c.ctx, c.master)];
         c.decks.forEach((deck, i) => { deck.view = views[i]; wireDeck(deck); applyEq(deck); });
       }
