@@ -35,6 +35,31 @@ function apiUrl(path) {
   return url.toString();
 }
 
+// Identificador anónimo de este navegador. No es un dato personal ni da permisos: el backend lo usa para que los
+// límites de uso cuenten por celular y no por la IP del Wi-Fi del local, que comparten todos los clientes.
+const CLIENT_ID_KEY = 'smartdj-client-id';
+const clientId = (() => {
+  const fresh = () =>
+    window.crypto?.randomUUID ? window.crypto.randomUUID() : `${Date.now().toString(16)}-${Math.random().toString(16).slice(2, 12)}`;
+  try {
+    let id = localStorage.getItem(CLIENT_ID_KEY);
+    if (!/^[A-Za-z0-9-]{8,64}$/.test(id || '')) {
+      id = fresh();
+      localStorage.setItem(CLIENT_ID_KEY, id);
+    }
+    return id;
+  } catch {
+    return fresh();
+  }
+})();
+
+// URL de un SSE: EventSource no puede mandar cabeceras, así que el identificador va en el query.
+function liveUrl(path, params = {}) {
+  const url = new URL(apiUrl(path));
+  for (const [key, value] of Object.entries({ ...params, client: clientId })) url.searchParams.set(key, value);
+  return url.toString();
+}
+
 // Cliente fetch robusto: agrega el Bearer token automaticamente, valida res.ok
 // y NUNCA intenta parsear HTML como JSON.
 async function api(path, options = {}) {
@@ -42,6 +67,7 @@ async function api(path, options = {}) {
   const token = getToken();
   const headers = {
     'Content-Type': 'application/json',
+    'X-Client-Id': clientId,
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...(options.headers || {}),
   };
@@ -968,7 +994,7 @@ function requestStatusView(requestId, track = null) {
     if (!finished) pollTimer = setTimeout(poll, 2000);
   };
   if ('EventSource' in window) {
-    source = new EventSource(`${API_BASE}/api/public/requests/${encodeURIComponent(requestId)}/events`);
+    source = new EventSource(liveUrl(`/public/requests/${encodeURIComponent(requestId)}/events`));
     source.addEventListener('status', (e) => {
       try {
         apply(JSON.parse(e.data));
@@ -1272,13 +1298,16 @@ function venuePage(venue, code) {
   let pending = null;
   const refreshSoon = () => {
     if (!pending)
-      pending = setTimeout(() => {
-        pending = null;
-        void refresh();
-      }, LIVE_REFRESH_MS);
+      pending = setTimeout(
+        () => {
+          pending = null;
+          void refresh();
+        },
+        LIVE_REFRESH_MS + Math.random() * LIVE_JITTER_MS,
+      );
   };
   if ('EventSource' in window) {
-    const source = new EventSource(apiUrl(`/public/venues/${encodeURIComponent(code)}/events`));
+    const source = new EventSource(liveUrl(`/public/venues/${encodeURIComponent(code)}/events`));
     source.addEventListener('ready', () => {
       live = true;
       refreshSoon();

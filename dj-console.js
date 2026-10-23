@@ -1090,7 +1090,7 @@ function showConsole(venue, { onBack } = {}) {
     }, LIVE_THROTTLE_MS);
   };
   if ('EventSource' in window && venue.public_code) {
-    c.events = new EventSource(apiUrl(`/public/venues/${encodeURIComponent(venue.public_code)}/events`));
+    c.events = new EventSource(liveUrl(`/public/venues/${encodeURIComponent(venue.public_code)}/events`, { view: 'console' }));
     c.events.addEventListener('update', onLiveUpdate);
   }
   void refreshRequests();
