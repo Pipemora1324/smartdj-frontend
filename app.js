@@ -1187,6 +1187,8 @@ function songRequestView(venue, code, { onRequested } = {}) {
 // Muestra lo que suena (con portada y preview), la cola de próximas aceptadas y el buscador.
 const NOW_POLL_MS = 10000;
 const LIVE_REFRESH_MS = 2000;
+// Desfase aleatorio extra: así los celulares del local no piden /now todos en el mismo instante tras un aviso.
+const LIVE_JITTER_MS = 2000;
 let nowPoll = null;
 
 // Peticiones propias del cliente en este local: solo sus ids, en el navegador (como mucho 10).
