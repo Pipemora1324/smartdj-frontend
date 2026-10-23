@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
+import { fileURLToPath } from 'node:url';
 
 const context = {
   window: { crypto: { getRandomValues: (a) => globalThis.crypto.getRandomValues(a) } },
@@ -14,7 +15,9 @@ const context = {
   String,
   Date,
 };
-vm.runInNewContext(readFileSync(new URL('../console-core.js', import.meta.url), 'utf8'), context);
+// Con filename la cobertura de node --test cuenta el archivo real.
+const file = fileURLToPath(new URL('../console-core.js', import.meta.url));
+vm.runInNewContext(readFileSync(file, 'utf8'), context, { filename: file });
 const core = context.window.SmartDJConsole;
 const close = (a, b) => Math.abs(a - b) < 1e-9;
 

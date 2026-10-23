@@ -3,9 +3,12 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
+import { fileURLToPath } from 'node:url';
 
 const context = { window: {} };
-vm.runInNewContext(readFileSync(new URL('../ui-core.js', import.meta.url), 'utf8'), context);
+// Con filename la cobertura de node --test cuenta el archivo real.
+const file = fileURLToPath(new URL('../ui-core.js', import.meta.url));
+vm.runInNewContext(readFileSync(file, 'utf8'), context, { filename: file });
 const ui = context.window.SmartDJUI;
 
 const memoryStorage = () => {
