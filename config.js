@@ -20,7 +20,7 @@
     host === '' ||
     host.startsWith('192.168.') ||
     host.startsWith('10.') ||
-    host.startsWith('172.');
+    /^172\.(1[6-9]|2\d|3[01])\./.test(host);
 
   var DEFAULT_LOCAL = 'http://localhost:3000';
   var DEFAULT_REMOTE = 'https://smart-dj-platform.onrender.com';
